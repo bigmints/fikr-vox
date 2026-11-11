@@ -27,7 +27,7 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Copy `.env.example` to `.en
 | [`server.mjs`](server.mjs), [`lib/`](lib/) | Local HTTP server, storage, and provider integrations |
 | [`local-tts/`](local-tts/) | Python speech engine, model catalog, and dependency lockfile |
 | [`test/`](test/) | Application and integration tests |
-| [`website/`](website/README.md) | Landing page, interactive demo, and user guide |
+| [`website/`](website/README.md) | Landing page, app screenshots, and user guide |
 | [`docs/`](docs/) | [Remote worker API](docs/worker-api.md) and [macOS release runbook](docs/macos-release.md) |
 
 Check both backends when changing shared behavior or a saved data format.
