@@ -25,3 +25,19 @@ test('generation submits serially, reuses ready turns and exports exact voice or
 test('existing running takes are polled without resubmission; stopped batches resume remaining turns',async()=>{const state=fixture(),p=state.projects[0],first=voiceSnapshot(state,p,p.sections[0]);state.jobs=[{...first,id:'running',status:'running'}];let stop=false,polls=0;const result=await runPodcastAudio({plan:planPodcastAudio(state,p),prepare:async()=>assert.fail('must not prepare another turn'),submit:async()=>assert.fail('must not resubmit'),poll:async()=>{polls++;stop=true;return {...state.jobs[0],status:'completed',outputId:'first'};},stopped:()=>stop,pause:async()=>{}});assert.equal(polls,1);assert.equal(result.completed,1);assert.equal(result.stopped,true);});
 test('failures and changed scripts stop before another voice is submitted',async()=>{const state=fixture(),plan=planPodcastAudio(state,state.projects[0]);let prepared=0;await assert.rejects(runPodcastAudio({plan,prepare:async()=>{prepared++;return {id:'bad',status:'prepared'};},submit:async()=>{},poll:async()=>({status:'failed',error:'No model available'}),pause:async()=>{}}),/No model/);assert.equal(prepared,1);await assert.rejects(runPodcastAudio({plan,changed:()=>true,prepare:async()=>assert.fail(),submit:async()=>{},poll:async()=>{}}),/changed/);});
 test('completed reuse preserves output and never charges again',async()=>{const state=fixture(),p=state.projects[0];state.jobs=p.sections.map(sec=>({...voiceSnapshot(state,p,sec),id:sec.id,status:'completed',outputId:'audio-'+sec.id}));const result=await runPodcastAudio({plan:planPodcastAudio(state,p),prepare:async()=>assert.fail(),submit:async()=>assert.fail(),poll:async()=>assert.fail()});assert.equal(result.completed,2);assert.notEqual(voiceIdentity(state.jobs[0]),voiceIdentity(state.jobs[1]));});
+
+test('Malayalam episodes can use OmniVoice presets without uploading recordings',()=>{
+ const state=fixture(),p=state.projects[0];p.language='ml';
+ for(const [i,profile] of state.profiles.entries())Object.assign(profile,{voiceProvider:'local',localEngine:'omnivoice-presets',localVoice:i?'arun':'maya'});
+ const plan=planPodcastAudio(state,p);assert.deepEqual(plan.map(e=>e.request.voiceMode),['preset','preset']);assert.deepEqual(plan.map(e=>e.request.voice),['maya','arun']);assert.ok(plan.every(e=>e.request.engine==='omnivoice-presets'));
+});
+
+test('whole-track generation carries each voice speed and conversational guidance',()=>{
+ const state=fixture(),p=state.projects[0];Object.assign(state.profiles[0],{localEngine:'omnivoice',voiceAssetId:'ref',voiceTranscript:'Reference words.',localVoiceInstruction:'female, casual conversational tone',localSpeech:{speed:1.2,sentencePause:0,volume:1}});
+ state.settings.localSpeech={speed:.9,sentencePause:.4,volume:.8};const request=podcastVoiceRequest(state,p,p.sections[0]);assert.equal(request.speech.speed,1.2);assert.equal(request.speech.volume,1);assert.match(request.instruct,/casual/);
+});
+
+test('episodes use added speech provider presets without requesting a clone recording',()=>{
+ const state={settings:{voiceProvider:'openrouter',speechModel:'legacy',providers:[{id:'api:eleven',models:[{id:'eleven_multilingual_v2',kind:'speech',voices:['alice']}]}]},profiles:[{id:'twin',name:'Alice',voiceProvider:'api:eleven',speechModel:'eleven_multilingual_v2',voice:'alice'}]};const project={id:'project',mode:'podcast',profileId:'twin',speakers:[{id:'a',name:'Alice',profileId:'twin'}],sections:[]};const section={id:'clip',title:'Turn',text:'Hello',speakerId:'a'};
+ const request=podcastVoiceRequest(state,project,section);assert.equal(request.provider,'api:eleven');assert.equal(request.engine,'eleven_multilingual_v2');assert.equal(request.voiceMode,'preset');assert.equal(request.voice,'alice');
+});

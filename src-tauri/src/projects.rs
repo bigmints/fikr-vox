@@ -13,8 +13,8 @@ pub fn reusable_voice(state: &Value, job: &Value) -> Option<Value> {
 }
 pub fn project_type(p: &Value) -> Result<String> {
     let kind = p["projectType"].as_str().unwrap_or("storytelling");
-    if !["storytelling", "podcast", "dubbing"].contains(&kind) {
-        return Err("Choose Story Telling, Podcast or Video Dubbing".into());
+    if !["storytelling", "podcast", "dubbing", "audiobook"].contains(&kind) {
+        return Err("Choose Story Telling, Podcast, Video Dubbing or Audiobook".into());
     }
     Ok(kind.into())
 }
@@ -28,7 +28,12 @@ pub fn speaker<'a>(p: &'a Value, sec: &Value) -> Option<&'a Value> {
         .find(|s| s["id"] == sec["speakerId"])
 }
 pub fn profile_id(p: &Value, sec: &Value) -> String {
-    if let Some(track)=voice_track(p,sec) {if !text(track,"profileId").is_empty(){return text(track,"profileId");}}
+    if let Some(track) = voice_track(p, sec) {
+        let profile_id = text(track, "profileId");
+        if !profile_id.is_empty() || (p["projectType"] == "audiobook" && track["kind"] == "character") {
+            return profile_id;
+        }
+    }
     if is_podcast(p) {
         speaker(p, sec)
             .map(|s| text(s, "profileId"))
@@ -40,7 +45,13 @@ pub fn profile_id(p: &Value, sec: &Value) -> String {
 pub fn voice_track<'a>(p: &'a Value, sec: &Value) -> Option<&'a Value> {
     let tracks=p["tracks"].as_array()?;
     if !text(sec,"trackId").is_empty(){return tracks.iter().find(|t|t["id"]==sec["trackId"]);}
-    if is_podcast(p){tracks.iter().find(|t|t["speakerId"]==sec["speakerId"]||text(t,"id")==format!("speaker-{}",text(sec,"speakerId")))}else{tracks.first()}
+    if is_podcast(p) {
+        tracks.iter().find(|t|t["speakerId"]==sec["speakerId"]||text(t,"id")==format!("speaker-{}",text(sec,"speakerId")))
+    } else if p["projectType"] == "audiobook" {
+        tracks.iter().find(|t|t["kind"] != "music" && t["id"] != "music")
+    } else {
+        tracks.first()
+    }
 }
 pub fn preset_voice(p: &Value, sec: &Value) -> String {
     if voice_track(p,sec).is_some_and(|t|!text(t,"profileId").is_empty()){return String::new();}
@@ -157,7 +168,8 @@ pub fn validate(p: &Value, state: Option<&Value>) -> Result<()> {
 pub fn create(b: &Value, state: &Value) -> Result<Value> {
     let kind = project_type(b)?;
     let title = text(b, "title");
-    let mut p = json!({"id":uid(),"title":if title.trim().is_empty(){"Untitled production"}else{&title},"projectType":kind,"mode":"voice","sections":[{"id":uid(),"title":"Opening","text":""}],"profileId":"","language":"en","audioId":"","createdAt":now(),"updatedAt":now()});
+    let first_section = if kind == "audiobook" { "Chapter 1" } else { "Opening" };
+    let mut p = json!({"id":uid(),"title":if title.trim().is_empty(){"Untitled production"}else{&title},"projectType":kind,"mode":"voice","sections":[{"id":uid(),"title":first_section,"text":""}],"profileId":"","language":"en","audioId":"","createdAt":now(),"updatedAt":now()});
     if p["projectType"]=="dubbing" {p["dubbing"]=crate::dubbing::defaults();}
     if is_podcast(&p) {
         p["podcast"] = b.get("podcast").cloned().unwrap_or_else(default_podcast);
@@ -193,6 +205,22 @@ mod tests {
         state["jobs"][0]["outputId"]=json!("audio");assert!(reusable_voice(&state,&original).is_some());
     }
     #[test]
+    fn audiobook_character_voices_do_not_inherit_the_narrator() {
+        let p = json!({
+            "projectType": "audiobook", "profileId": "narrator",
+            "tracks": [
+                {"id":"music","kind":"music"},
+                {"id":"voice"},
+                {"id":"guest","kind":"character","profileId":"guest-voice"},
+                {"id":"other","kind":"character"}
+            ]
+        });
+        assert_eq!(voice_track(&p, &json!({})).unwrap()["id"], "voice");
+        assert_eq!(profile_id(&p, &json!({})), "narrator");
+        assert_eq!(profile_id(&p, &json!({"trackId":"guest"})), "guest-voice");
+        assert_eq!(profile_id(&p, &json!({"trackId":"other"})), "");
+    }
+    #[test]
     fn creates_types_and_validates_cast_and_turns() {
         let state = crate::store::initial();
         assert_eq!(
@@ -200,6 +228,10 @@ mod tests {
             "storytelling"
         );
         assert!(create(&json!({"projectType":"other"}), &state).is_err());
+        let audiobook = create(&json!({"projectType":"audiobook"}), &state).unwrap();
+        assert_eq!(audiobook["projectType"], "audiobook");
+        assert_eq!(audiobook["sections"][0]["title"], "Chapter 1");
+        assert_eq!(audiobook["sections"].as_array().unwrap().len(), 1);
         let p = create(&json!({"projectType":"podcast"}), &state).unwrap();
         assert_eq!(p["sections"].as_array().unwrap().len(), 2);
         assert_eq!(p["sections"][1]["speakerId"], "guest");

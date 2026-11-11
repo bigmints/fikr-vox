@@ -9,7 +9,7 @@ use std::{
 #[derive(Clone)]
 pub struct OpenRouter {
     pub store: Store,
-    secrets: Arc<Mutex<Value>>,
+    pub(crate) secrets: Arc<Mutex<Value>>,
     pub(crate) client: reqwest::Client,
     pub(crate) base: String,
     pub(crate) audio_shares: Arc<Mutex<std::collections::HashMap<String,crate::media_share::MediaShare>>>,
@@ -22,7 +22,7 @@ pub fn has(v: &Value, field: &str, value: &str) -> bool {
 }
 pub fn catalog_entry(m: &Value) -> Value {
     let a = &m["architecture"];
-    json!({"id":m["id"],"name":m["name"],"inputs":a["input_modalities"],"outputs":a["output_modalities"],"voices":m["supported_voices"],"endpoints":m["endpoints"],"pricing":m["pricing"]})
+    json!({"id":m["id"],"name":m["name"],"inputs":a["input_modalities"],"outputs":a["output_modalities"],"voices":m["supported_voices"],"languages":m.get("supported_languages").or_else(||m.get("languages")),"voiceLanguages":m.get("voice_languages").or_else(||m.get("voiceLanguages")),"endpoints":m["endpoints"],"pricing":m["pricing"]})
 }
 pub fn supports(m: &Value, purpose: &str) -> bool {
     match purpose {
@@ -141,9 +141,9 @@ impl OpenRouter {
             .cloned()
             .ok_or("Refresh models and choose a compatible model".into())
     }
-    pub async fn listen(&self, asset_id: &str) -> Result<Value> {
+    pub async fn listen(&self, asset_id: &str, model_id: &str) -> Result<Value> {
         let model = self.model(
-            &text(&self.store.read()["settings"], "listeningModel"),
+            &if model_id.is_empty(){text(&self.store.read()["settings"], "listeningModel")}else{model_id.to_string()},
             "listening",
         )?;
         let a = self.store.asset(asset_id)?;
@@ -254,7 +254,7 @@ impl OpenRouter {
         }
         self.store
             .patch_job(id, json!({"status":"running","stage":"Creating voice"}))?;
-        let r=self.client.post(format!("{}/audio/speech",self.base)).bearer_auth(self.key()?).header("X-OpenRouter-Title","MyTwin").json(&body).send().await.map_err(|_|"Speech request interrupted. Check OpenRouter activity before starting another take; credits may have been used.")?;
+        let r=self.client.post(format!("{}/audio/speech",self.base)).bearer_auth(self.key()?).header("X-OpenRouter-Title","Fikr Vox").json(&body).send().await.map_err(|_|"Speech request interrupted. Check OpenRouter activity before starting another take; credits may have been used.")?;
         let mut r = Self::checked(r).await?;
         let mime = r
             .headers()

@@ -1,5 +1,5 @@
 {
-  "name": "mytwin-studio",
+  "name": "fikr-vox",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,7 +7,8 @@
     "test": "node --test",
     "desktop": "tauri dev",
     "build:desktop": "tauri build --bundles app",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+    "test:rust": "node scripts/prepare-desktop.mjs && cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "prepare:licenses": "python3 scripts/generate-notices.py"
   },
   "engines": {
     "node": ">=22"

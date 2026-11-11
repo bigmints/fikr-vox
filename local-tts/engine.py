@@ -15,10 +15,69 @@ import time
 CATALOG = json.loads(Path(__file__).with_name("catalog.json").read_text())
 
 
+def design_seed(identifier=None):
+    # A worker starts with MLX's default random state. Seed each new design so
+    # comparing previews yields different voices; a retry of one job is stable.
+    import hashlib
+    import secrets
+    return int.from_bytes(hashlib.sha256(identifier.encode()).digest()[:4], "big") if identifier else secrets.randbits(32)
+
+
+def voice_tone(description):
+    text = description.lower()
+    whisper = bool(re.search(r"\b(whisper|whispering|whispered)\b", text))
+    casual = bool(re.search(r"\b(casual|conversational)\b", text))
+    if whisper and casual:
+        raise ValueError("Choose one tone: casual conversational or whispered.")
+    # Casual is explicitly experimental in MyTwin: the MLX adapter accepts the
+    # prompt, but upstream does not document conversational tone as a trained trait.
+    return "whisper" if whisper else "casual, conversational" if casual else "None"
+
+
+def design_attributes(description, language):
+    """Map a plain English description to OmniVoice's trained voice traits."""
+    text = description.lower().replace("–", "-").replace("—", "-")
+    traits = []
+
+    def category(name, choices):
+        matches = [value for value, pattern in choices if re.search(pattern, text)]
+        if len(matches) > 1:
+            raise ValueError("Choose one " + name + " for this voice.")
+        traits.extend(matches)
+
+    category("gender", [("female", r"\b(female|woman|feminine)\b"),
+                         ("male", r"\b(male|man|masculine)\b")])
+    category("age", [("child", r"\b(child|children)\b"),
+                      ("teenager", r"\b(teenager|teenage|teen)\b"),
+                      ("young adult", r"\b(young adult|young|youthful)\b"),
+                      ("middle-aged", r"\b(middle[- ]aged|mature)\b"),
+                      ("elderly", r"\b(elderly|older|senior)\b")])
+    low = bool(re.search(r"\b(low|lower|deep|deeper|bass)\b", text))
+    high = bool(re.search(r"\b(high|higher|bright|brightly)\b", text))
+    medium = bool(re.search(r"\b(moderate|medium|mid)[- ]pitch\b", text))
+    if sum((low, high, medium)) > 1:
+        raise ValueError("Choose one pitch for this voice.")
+    if low:
+        traits.append("very low pitch" if re.search(r"\b(very|extremely) (low|deep)\b", text) else "low pitch")
+    if high:
+        traits.append("very high pitch" if re.search(r"\b(very|extremely) high\b", text) else "high pitch")
+    if medium:
+        traits.append("moderate pitch")
+    tone = voice_tone(description)
+    if tone != "None":
+        traits.append(tone)
+    if language == "en":
+        category("English accent", [(accent + " accent", r"\b" + accent + r"\b") for accent in
+                 ("american", "british", "australian", "canadian", "indian", "chinese", "korean", "japanese", "portuguese", "russian")])
+    if not traits:
+        raise ValueError("Describe at least one voice trait: male or female, age, pitch, or whispering. For example: a young adult female voice with a low pitch.")
+    return ", ".join(traits)
+
+
 def validate(request):
     engine = request.get("engine")
     if engine not in CATALOG:
-        raise ValueError("Choose Qwen3 or Kokoro.")
+        raise ValueError("Choose a supported local speech model.")
     model = CATALOG[engine]
     if request.get("language") not in model["languages"]:
         raise ValueError("This local model does not support the selected language.")
@@ -33,8 +92,10 @@ def validate(request):
         raise ValueError("Use a voice instruction of at most 2,000 characters.")
     if model["mode"] == "design" and not instruction.strip():
         raise ValueError("Describe the voice you want to create.")
-    if engine in ("qwen3", "qwen3-hq") and (not request.get("reference") or not request.get("referenceText", "").strip()):
+    if model["mode"] == "clone" and (not request.get("reference") or not request.get("referenceText", "").strip()):
         raise ValueError("Add a voice recording and its exact transcript to your twin.")
+    if engine == "omnivoice-design":
+        design_attributes(instruction, request["language"])
     return model
 
 
@@ -49,6 +110,19 @@ def chunks(text, limit=350):
             part = part[cut:].strip()
         if part.strip():
             yield part.strip()
+
+
+def continuous_chunks(text, limit=350):
+    # OmniVoice needs enough context to speak a short sentence naturally.
+    # Keep neighbouring sentences together when no extra pause is requested.
+    combined = ""
+    for part in chunks(text, limit):
+        if combined and len(combined) + len(part) + 1 > limit:
+            yield combined, False
+            combined = ""
+        combined = (combined + " " + part).strip()
+    if combined:
+        yield combined, False
 
 
 def speech_options(value=None):
@@ -151,6 +225,25 @@ def load_reference(path, sample_rate=24000):
     return np.asarray(audio, dtype=np.float32)
 
 
+def omnivoice_language(spec, language):
+    # The MLX port inserts this value directly into the model prompt; unlike
+    # upstream it does not resolve language names to training language IDs.
+    return spec.get("generationLanguages", {}).get(language, language)
+
+
+def preset_reference(spec, voice, language=None):
+    """Resolve a fixed synthetic voice from the signed app resources."""
+    import hashlib
+    ref = spec.get("voiceReferences", {}).get(voice)
+    if not ref:
+        raise ValueError("Choose a supported ready-made voice.")
+    ref = ref.get("languages", {}).get(language, ref)
+    path = Path(__file__).parent / ref["file"]
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != ref["sha256"]:
+        raise ValueError("The built-in voice pack is missing or damaged. Reinstall MyTwin.")
+    return load_reference(path), ref["text"]
+
+
 def operate(root, operation, request):
     root.mkdir(parents=True, exist_ok=True)
     os.environ["HF_HOME"] = str(root / "models")
@@ -168,6 +261,8 @@ def operate(root, operation, request):
     if key not in CATALOG:
         raise ValueError("Unknown local model")
     spec = CATALOG[key]
+    if operation != "download":
+        validate(request)
     path = snapshot_download(spec["repo"], revision=spec["revision"],
                              local_files_only=operation != "download",
                              ignore_patterns=["samples/*", "*.pt", "*.md", ".gitattributes"])
@@ -178,7 +273,7 @@ def operate(root, operation, request):
         import unidic
         import unidic_lite
         unidic.DICDIR = unidic_lite.DICDIR
-    model = load_model(path, model_type="kokoro" if key == "kokoro" else "qwen3_tts")
+    model = load_model(path, model_type=spec.get("modelType", "kokoro" if key == "kokoro" else "qwen3_tts"))
     if operation == "download":
         # Warm up text processing and every offered voice while online. This also
         # catches incompatible runtime/model pairs before marking the model ready.
@@ -187,7 +282,11 @@ def operate(root, operation, request):
             for voice in spec["voices"]:
                 for result in model.generate(samples[voice[0]], voice=voice, lang_code=voice[0]):
                     np.asarray(result.audio)
-        marker = root / (key + ".ready.json")
+        for voice, ref in spec.get("voiceReferences", {}).items():
+            preset_reference(spec, voice)
+            for language in ref.get("languages", {}):
+                preset_reference(spec, voice, language)
+        marker = root / (spec.get("cacheEngine", key) + ".ready.json")
         temp = marker.with_suffix(".tmp")
         temp.write_text(json.dumps({"revision": spec["revision"], "runtimeVersion": spec.get("runtimeVersion", 1)}))
         temp.replace(marker)
@@ -195,7 +294,19 @@ def operate(root, operation, request):
     validate(request)
     controls = speech_options(request.get("speech"))
     kwargs = {}
-    if key in ("qwen3", "qwen3-hq"):
+    if key == "omnivoice-design":
+        import mlx.core as mx
+        mx.random.seed(design_seed(request.get("id")))
+        kwargs = {"language": omnivoice_language(spec, request["language"]),
+                  "instruct": design_attributes(request["instruct"], request["language"]),
+                  "num_steps": spec.get("generationSteps", {}).get(request["language"], 32)}
+    elif spec.get("voiceReferences"):
+        import mlx.core as mx
+        audio, transcript = preset_reference(spec, request["voice"], request["language"])
+        kwargs = {"ref_audio": mx.array(audio, dtype=mx.float32), "ref_text": transcript,
+                  "language": omnivoice_language(spec, request["language"]),
+                  "num_steps": spec.get("generationSteps", {}).get(request["language"], 32)}
+    elif spec["mode"] == "clone":
         import mlx.core as mx
         audio = mx.array(load_reference(request["reference"]), dtype=mx.float32)
         peak = float(mx.max(mx.abs(audio)))
@@ -206,6 +317,10 @@ def operate(root, operation, request):
         audio = audio * min(20.0, 0.9 / peak)
         kwargs = {"ref_audio": audio, "ref_text": request["referenceText"],
                   "lang_code": spec["languages"][request["language"]]}
+        if key == "omnivoice":
+            kwargs = {"instruct": voice_tone(request.get("instruct", "")),"ref_audio": audio, "ref_text": request["referenceText"],
+                      "language": omnivoice_language(spec, request["language"]),
+                      "num_steps": spec.get("generationSteps", {}).get(request["language"], 32)}
     elif key == "kokoro":
         kwargs = {"voice": request["voice"], "lang_code": request["voice"][0]}
     else:
@@ -219,12 +334,14 @@ def operate(root, operation, request):
         with sf.SoundFile(str(partial), mode="w", samplerate=24000, channels=1, subtype="PCM_16") as target:
             # A design preview is one generation so its identity cannot change at sentence boundaries.
             segments = [(request["text"], False)] if spec["mode"] == "design" else kokoro_delivery_chunks(model, request["text"], request["voice"]) if key == "kokoro" else delivery_chunks(request["text"])
+            if spec.get("modelType") == "omnivoice" and controls["sentencePause"] == 0:
+                segments = continuous_chunks(request["text"])
             for segment, pause_after in segments:
                 segment_audio = []
-                if key != "kokoro":
+                if key != "kokoro" and spec.get("modelType") != "omnivoice":
                     kwargs["max_tokens"] = min(1024, max(192, len(segment) * 3))
                 for result in model.generate(segment, **kwargs):
-                    if key != "kokoro" and result.token_count >= kwargs["max_tokens"]:
+                    if key != "kokoro" and spec.get("modelType") != "omnivoice" and result.token_count >= kwargs["max_tokens"]:
                         raise ValueError("Qwen3 did not finish cleanly. Try shorter text or another preview; for cloning, check the reference and transcript.")
                     if result.sample_rate != 24000:
                         raise ValueError("Unexpected model sample rate")
@@ -247,7 +364,8 @@ def operate(root, operation, request):
         partial.replace(output)
     finally:
         partial.unlink(missing_ok=True)
-    return {"duration": frames / 24000, "sampleRate": 24000}
+    return {"duration": frames / 24000, "sampleRate": 24000,
+            **({"designAttributes": kwargs["instruct"]} if key == "omnivoice-design" else {})}
 
 
 if __name__ == "__main__":

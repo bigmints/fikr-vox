@@ -1,3 +1,4 @@
+import {localVoiceChoices} from '../public/local-voices.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,rm,readFile} from 'node:fs/promises';
@@ -123,4 +124,71 @@ test('twin preset choices persist without a recording and prepare a local preset
  await store.update(s=>s.projects=[{id:'p',profileId:twin.id,language:'en',sections:[{id:'s',text:'Hello.'}]}]);
  const job=await call('/jobs','POST',{projectId:'p',sectionId:'s',kind:'voice',provider:twin.voiceProvider,engine:twin.localEngine,voice:twin.localVoice});
  assert.equal(job.provider,'local');assert.equal(job.engine,'kokoro');assert.equal(job.voice,'bf_emma');assert.equal(job.voiceMode,'preset');
+});
+
+test('language changes exclude incompatible voices and include Malayalam OmniVoice presets',()=>{
+ assert.deepEqual(localVoiceChoices(localCatalog,'kokoro','hi').map(([id])=>id),['hf_alpha','hf_beta','hm_omega','hm_psi']);
+ for(const engine of Object.keys(localCatalog).filter(e=>e!=='omnivoice-presets'))assert.deepEqual(localVoiceChoices(localCatalog,engine,'ml'),[]);
+ assert.deepEqual(localVoiceChoices(localCatalog,'omnivoice-presets','ml').map(([id])=>id),['maya','tara','arun','dev']);
+ assert.equal(localVoiceChoices(localCatalog,'qwen3-custom','en').length,9);
+});
+
+test('OmniVoice Malayalam inference snapshots and forwards a local voice reference',async t=>{
+ const f=await fixture(t,async(root,op,r)=>{assert.equal(r.engine,'omnivoice');assert.equal(r.language,'ml');assert.equal(r.reference,join(f.dir,'media','ref'));assert.equal(r.referenceText,'Exact recorded words.');await writeFile(r.output,wav());return {duration:1};});
+ await f.store.update(s=>{s.assets=[{id:'ref',type:'audio/wav'}];Object.assign(s.jobs[0],{engine:'omnivoice',voice:'',language:'ml',text:'നമസ്കാരം',referenceText:'Exact recorded words.',inputs:{voice:'ref'}});});
+ await f.client.claim('j');await f.client.run('j');const done=f.store.read().jobs[0];assert.equal(done.status,'completed');assert.ok(done.outputId);
+});
+
+test('OmniVoice presets preview and save in Malayalam without a user recording',()=>{
+ const {voices}=localCatalog['omnivoice-presets'];assert.equal(Object.keys(voices).length,4);
+ for(const voice of Object.keys(voices)){
+  const request={engine:'omnivoice-presets',voice,language:'ml',text:'നമസ്കാരം'};
+  const job=prepareVoicePreview(request,{assets:[]});assert.equal(job.voiceMode,'preset');assert.deepEqual(job.inputs,{});assert.equal(job.referenceText,'');
+  const saved=savedLocalVoice({voiceProvider:'local',localEngine:request.engine,localVoice:voice,voiceLanguage:'ml',localVoiceLanguage:'ml'},{assets:[],jobs:[]});assert.equal(saved.localVoice,voice);assert.equal(saved.localEngine,'omnivoice-presets');
+ }
+ assert.throws(()=>prepareVoicePreview({engine:'omnivoice-presets',voice:'invented',language:'ml',text:'Hi'},{assets:[]}),/preset/);
+});
+test('OmniVoice presets reuse the installed clone model and run without reference inputs',async t=>{
+ const f=await fixture(t,async(root,op,r)=>{assert.equal(r.engine,'omnivoice-presets');assert.equal(r.voice,'maya');assert.equal(r.language,'ml');assert.equal(r.reference,undefined);await writeFile(r.output,wav());return {duration:1};});
+ await rm(join(f.dir,'local-tts/omnivoice-presets.ready.json'));
+ assert.equal((await f.client.status()).models['omnivoice-presets'].ready,true);
+ const job=await f.client.preview({engine:'omnivoice-presets',voice:'maya',language:'ml',text:'നമസ്കാരം'});
+ await f.client.run(job.id);assert.equal(f.store.read().jobs.find(j=>j.id===job.id).status,'completed');
+});
+test('HTTP preparation of Malayalam ready-made voices needs no reference asset',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'mytwin-presets-api-'));const {server,store}=await createApp({dataDir:dir});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(async()=>{await new Promise(r=>server.close(r));await rm(dir,{recursive:true,force:true});});
+ await store.update(s=>{s.projects=[{id:'p',profileId:'t',language:'ml',sections:[{id:'s',text:'നമസ്കാരം'}]}];s.profiles=[{id:'t',name:'Maya',voiceProvider:'local',localEngine:'omnivoice-presets',localVoice:'maya'}];});
+ const res=await fetch(`http://127.0.0.1:${server.address().port}/api/jobs`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:'p',sectionId:'s',kind:'voice',provider:'local',engine:'omnivoice-presets',voice:'maya',voiceMode:'preset'})});
+ const job=await res.json();assert.equal(res.status,201,JSON.stringify(job));assert.equal(job.voiceMode,'preset');assert.equal(job.language,'ml');assert.equal(job.voice,'maya');assert.ok(!job.inputs.voice);
+});
+
+test('OmniVoice descriptions become reusable local voices tied to the chosen preview',()=>{
+ const request={engine:'omnivoice-design',language:'ml',text:'നമസ്കാരം. നമ്മുടെ പോഡ്കാസ്റ്റിലേക്ക് സ്വാഗതം.',instruct:'A young adult woman with a lower pitch.'};
+ const job={...prepareVoicePreview(request,{assets:[]}),status:'completed',duration:8,outputId:'designed-audio'};
+ assert.equal(job.voiceMode,'design');assert.deepEqual(job.inputs,{});
+ const state={jobs:[job],assets:[{id:job.outputId,type:'audio/wav'}]};
+ const body={voiceProvider:'local',localEngine:request.engine,localVoiceLanguage:'ml',voiceLanguage:'ml',localVoiceInstruction:request.instruct,voicePreviewJobId:job.id};
+ const saved=savedLocalVoice(body,state);assert.equal(saved.localEngine,'omnivoice');assert.equal(saved.voiceAssetId,job.outputId);assert.equal(saved.voiceTranscript,job.text);assert.equal(saved.voiceDesign.engine,'omnivoice-design');
+ assert.throws(()=>savedLocalVoice({...body,localVoiceInstruction:'A different voice'},state),/preview/);
+ assert.throws(()=>savedLocalVoice(body,{...state,jobs:[{...job,engine:'qwen3-design'}]}),/preview/);
+ assert.throws(()=>savedLocalVoice(body,{...state,jobs:[{...job,status:'failed'}]}),/preview/);
+ assert.throws(()=>savedLocalVoice(body,{...state,jobs:[{...job,duration:2}]}),/30 seconds/);
+ assert.throws(()=>prepareVoicePreview({...request,instruct:''}),/Describe/);
+});
+test('each description preview is a fresh take and preserves the recognized voice traits',async t=>{
+ let calls=0;const f=await fixture(t,async(root,op,r)=>{calls++;assert.equal(r.engine,'omnivoice-design');assert.equal(r.reference,undefined);await writeFile(r.output,wav());return {duration:8,designAttributes:'female, young adult, low pitch'};});
+ const body={engine:'omnivoice-design',language:'ml',text:'നമസ്കാരം. നമ്മുടെ പോഡ്കാസ്റ്റിലേക്ക് സ്വാഗതം.',instruct:'A young adult woman with a lower pitch.'};
+ const first=await f.client.preview(body);await f.client.run(first.id);const second=await f.client.preview(body);await f.client.run(second.id);
+ assert.notEqual(first.id,second.id);assert.equal(calls,2);
+ for(const id of [first.id,second.id])assert.equal(f.store.read().jobs.find(j=>j.id===id).designAttributes,'female, young adult, low pitch');
+});
+
+test('a saved design keeps the previewed speed and rejects unpreviewed delivery edits',()=>{
+ const request={engine:'omnivoice-design',language:'ml',text:'നമസ്കാരം. നമ്മുടെ പോഡ്കാസ്റ്റിലേക്ക് സ്വാഗതം.',instruct:'female, casual conversational tone',speech:{speed:1.2,sentencePause:0,volume:1}};
+ const job={...prepareVoicePreview(request),status:'completed',duration:6,outputId:'fast-audio'};
+ const state={jobs:[job],assets:[{id:'fast-audio',type:'audio/wav'}]};
+ const body={voiceProvider:'local',localEngine:request.engine,localVoiceLanguage:'ml',localVoiceInstruction:request.instruct,localSpeech:request.speech,voicePreviewJobId:job.id};
+ const saved=savedLocalVoice(body,state);assert.equal(saved.localSpeech.speed,1.2);assert.equal(saved.voiceDesign.speech.speed,1.2);assert.equal(job.speech.speed,1.2);
+ assert.throws(()=>savedLocalVoice({...body,localSpeech:{speed:1.1}},state),/delivery speed/);
+ assert.throws(()=>savedLocalVoice({...body,localSpeech:{speed:3}},state),/speed/);
 });

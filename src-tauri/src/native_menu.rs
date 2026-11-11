@@ -1,6 +1,4 @@
-use tauri::{menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem}, Emitter, Manager};
-
-pub struct ProjectActionsMenu(Menu<tauri::Wry>);
+use tauri::{menu::{Menu, MenuItem, PredefinedMenuItem}, Emitter};
 
 pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
     let menu = Menu::default(app)?;
@@ -19,13 +17,6 @@ pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
         }
     }
     app.set_menu(menu)?;
-    let project_actions = Menu::with_items(app, &[
-        &MenuItem::with_id(app, "project-new", "New Project…", true, Some("CmdOrCtrl+N"))?,
-        &MenuItem::with_id(app, "project-open", "Open Project…", true, Some("CmdOrCtrl+O"))?,
-        &PredefinedMenuItem::separator(app)?,
-        &MenuItem::with_id(app, "project-rename", "Rename Project…", true, None::<&str>)?,
-    ])?;
-    app.manage(ProjectActionsMenu(project_actions));
     app.on_menu_event(|app, event| {
         let action = match event.id().as_ref() {
             "project-new" => "new",
@@ -38,11 +29,4 @@ pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
         let _ = app.emit("studio-menu", action);
     });
     Ok(())
-}
-
-
-#[tauri::command]
-pub fn show_project_menu(menu: tauri::State<'_, ProjectActionsMenu>, window: tauri::Window, x: f64, y: f64) -> Result<(), String> {
-    if !x.is_finite() || !y.is_finite() { return Err("Invalid menu position".into()); }
-    menu.0.popup_at(window, tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string())
 }

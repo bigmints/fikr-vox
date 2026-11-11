@@ -1,8 +1,8 @@
-# MyTwin Studio
+# Fikr Vox
 
 ## InfiniteTalk removed — 2026-11-05
 
-InfiniteTalk has been uninstalled from Worker after repeated unexpected power-offs. Its dedicated model cache, worker/UI/control services and dashboard controls have been removed. MyTwin no longer offers it and refuses to resume incomplete InfiniteTalk jobs. OpenRouter avatar generation remains available through an explicit user action.
+InfiniteTalk has been uninstalled from Worker after repeated unexpected power-offs. Its dedicated model cache, worker/UI/control services and dashboard controls have been removed. Fikr Vox no longer offers it and refuses to resume incomplete InfiniteTalk jobs. OpenRouter avatar generation remains available through an explicit user action.
 
 Photos, audio, completed videos and diagnostic records are preserved. Worker's archived media, job database, logs and service definitions are in `/home/operator/archives/infinitetalk-removed-20261105`. Shared ComfyUI and InvokeAI installations were retained. Historical InfiniteTalk source and deployment notes below are retained for reference; they do not describe a running installation. Do not reinstall or run InfiniteTalk while the shutdown cause remains unresolved.
 
@@ -14,13 +14,15 @@ The desktop app runs without Node.js or a browser server. Its backend is Rust; t
 
 ```sh
 npm run desktop        # development
-npm run build:desktop  # package MyTwin.app
+npm run build:desktop  # package Fikr Vox.app
 npm run test:rust      # Rust tests
 ```
 
-Build tools: Rust, Xcode command-line tools, and the official Tauri CLI (installed through `npm install`). Runtime: macOS only for this build. The app bundle is generated at `src-tauri/target/release/bundle/macos/MyTwin.app`. It can be opened directly or copied to Applications.
+Build tools: Rust, Xcode with the macOS 26 SDK or later, Python 3.11+, `uv`, and the official Tauri CLI (installed through `npm install`). The app bundle is generated at `src-tauri/target/release/bundle/macos/Fikr Vox.app`. It can be opened directly or copied to Applications.
 
-Native file pickers import references and export results. Desktop data is stored in `~/Library/Application Support/com.pretheesh.mytwin/`, separately from the browser prototype. Credentials are stored there in an owner-readable file; they are not encrypted at rest. Prototype data is not automatically imported.
+Official Apple silicon installers and automatic updates are delivered through [GitHub Releases](https://github.com/bigmints/fikr-vox/releases). See the [macOS release runbook](docs/macos-release.md) for signing setup, publishing, and update testing.
+
+Native file pickers import references and export results. Desktop data is stored in `~/Library/Application Support/com.bigmints.fikr.vox/`, separately from the browser prototype. Credentials are stored there in an owner-readable file; they are not encrypted at rest. Prototype data is not automatically imported.
 
 Historical Worker adapter source is retained in `worker/infinitetalk_worker.py`. See [the worker API](docs/worker-api.md) for the removal status and archived contract.
 
@@ -58,9 +60,9 @@ Open http://127.0.0.1:4317. Set `PORT` to change the port. Run `npm test` for in
 
 ## Connect services
 
-Open **Settings → Connections** to connect API providers or download local models on one page, grouped into Chat, Audio, and Video. Click **Connect** beside OpenRouter and paste your key; that connection is shared across all three groups. **Manage → Model choices** keeps the searchable Chat, Speech, and Transcription model selectors with the provider. Refresh models fetches current choices and voices from OpenRouter. Writing and transcription send content only when their action is clicked. Speech jobs are saved first and sent only when Generate with OpenRouter is clicked. Alternatively set `OPENROUTER_API_KEY` in `.env` (see `.env.example`). Provider requests incur normal provider charges. No live paid request was made during development.
+Open **Settings → Connections** to connect API providers or download local models on one page, grouped into Chat, Audio, and Video. Click **Connect** beside OpenRouter and paste your key; that connection is shared across all three groups. Settings manages provider connections, available models and downloads; it does not choose a default model. In **My Models → Edit model**, choose the audio provider and model under **Voice**, and the transcription provider and model under **Transcription**. Reference recordings, studio transcription and dubbing use that model’s saved transcription settings. Existing profiles without transcription settings retain their previous defaults until saved. Refresh models fetches current choices and voices from OpenRouter. Writing and transcription send content only when their action is clicked. Speech jobs are saved first and sent only when Generate with OpenRouter is clicked. Alternatively set `OPENROUTER_API_KEY` in `.env` (see `.env.example`). Provider requests incur normal provider charges. No live paid request was made during development.
 
-Worker integration uses the authenticated [MyTwin worker API](docs/worker-api.md) at `http://192.0.2.10:8420`. The InfiniteTalk status UI is on port 8418. Generate or upload narration first. The current guarded preset accepts a portrait and audio up to 16 seconds, with one generation job at a time. In the avatar dialog, choose Worker and **Accelerated · 4 steps** or **Baseline · 8 steps**. Accelerated is selected when the worker advertises its adapter as ready. The same memory limits and automatic low-memory stop apply to both choices.
+Worker integration uses the authenticated [Fikr Vox worker API](docs/worker-api.md) at `http://192.0.2.10:8420`. The InfiniteTalk status UI is on port 8418. Generate or upload narration first. The current guarded preset accepts a portrait and audio up to 16 seconds, with one generation job at a time. In the avatar dialog, choose Worker and **Accelerated · 4 steps** or **Baseline · 8 steps**. Accelerated is selected when the worker advertises its adapter as ready. The same memory limits and automatic low-memory stop apply to both choices.
 
 The orchestration layer transfers reference media, submits immutable jobs with idempotency keys, polls known remote jobs, and downloads results. Prepared jobs never auto-submit on reconnect. Unknown connection failures require explicit refresh/resubmit. A failed remote render is retained; prepare a new job to rerun it.
 
@@ -68,7 +70,7 @@ The orchestration layer transfers reference media, submits immutable jobs with i
 
 `data/studio.json` stores projects and jobs; `data/media/` contains originals and completed results. `data/secrets.json` stores credentials with owner-only file permissions, unencrypted at rest. Back up `data/`; do not share it without removing credentials and private media. It is gitignored. The app binds only to `127.0.0.1`, checks Host and Origin, and is intended for a single local user. Do not expose it publicly.
 
-References are stored but not trained or audited for model quality. Avatar generation requires a real worker. OpenRouter speech generation runs independently of Worker. InfiniteTalk is no longer installed on Worker. Local voice engines, native export transcoding, transparent video and whole-production stitching are separate follow-up work. Downloads preserve the worker's output format. Profiles can be created and edited, including replacement references. Profile and project deletion remain follow-up work. Individual uploaded files and returned artifacts are limited to 512 MB.
+References are stored but not trained or audited for model quality. Avatar generation requires a real worker. OpenRouter speech generation runs independently of Worker. InfiniteTalk is no longer installed on Worker. Transparent video remains separate follow-up work. Downloads preserve the worker's output format. Profiles can be created and edited, including replacement references. Library project cards and My Models cards offer Duplicate and Delete. Copies retain completed takes and shared media without submitting generation or duplicating spending. Deletion requires confirmation, keeps media and spending history, and is blocked while jobs are active. Replace a model in any projects using it before deleting the model. Individual uploaded files and returned artifacts are limited to 512 MB.
 
 ## Layout
 
@@ -105,13 +107,13 @@ Both native and browser backends persist remote video IDs, poll every 30 seconds
 API reference: https://openrouter.ai/docs/guides/overview/multimodal/video-generation
 
 ## OpenRouter avatar videos
-MyTwin’s **Spending** view shows saved OpenRouter charges in USD and exports a CSV record. Totals use provider-reported `usage.cost`, including each individual shot of multi-shot videos once. Missing costs remain **Unknown**, including historical speech takes and rejected requests; they are not treated as zero. This is a record of saved MyTwin requests, not an account-wide OpenRouter invoice. Video billing metadata is saved before downloading output so a download failure does not hide a reported charge.
+Fikr Vox’s **Spending** view shows saved OpenRouter charges in USD and exports a CSV record. Totals use provider-reported `usage.cost`, including each individual shot of multi-shot videos once. Missing costs remain **Unknown**, including historical speech takes and rejected requests; they are not treated as zero. This is a record of saved Fikr Vox requests, not an account-wide OpenRouter invoice. Video billing metadata is saved before downloading output so a download failure does not hide a reported charge.
 
-Avatar IV requires a detectable human-like face. If HeyGen rejects a reference with “No face detected,” MyTwin explains the failure and blocks further Avatar IV submissions using that same saved image. Select a new human portrait or use image-to-video for non-human characters; scene animation with narration does not guarantee lip-sync.
+Avatar IV requires a detectable human-like face. If HeyGen rejects a reference with “No face detected,” Fikr Vox explains the failure and blocks further Avatar IV submissions using that same saved image. Select a new human portrait or use image-to-video for non-human characters; scene animation with narration does not guarantee lip-sync.
 
 In **Avatar video**, choose **OpenRouter** to use `heygen/avatar-iv` at 720p ($0.05 per output second at the checked November 2026 rate). Select a twin with a JPG, PNG or WebP portrait and approve a voice take for the current section. Click **Generate avatar video** to submit directly. Approved voice takes also have a **Generate avatar video** button, and the timeline offers the same OpenRouter/Worker choice. The temporary-audio-sharing checkbox is required for OpenRouter. An offline Worker selection saves the job for later.
 
-OpenRouter requires HTTPS audio references. After you check the temporary-sharing option, MyTwin uses the locally installed `cloudflared` binary to serve only the approved audio through an unguessable Cloudflare HTTPS URL. The server binds to loopback, rejects all other routes and write methods, and closes after a terminal render result or 30 minutes. Keep MyTwin open until the upload/render completes. The portrait is sent inline. MyTwin sends the exact approved audio as a reference; it does not ask the provider to synthesize a new voice. Portraits are limited to 20 MB and audio to 50 MB. The existing OpenRouter key stays in the backend. Avatar jobs use the same durable status polling and local video download as other video jobs; restarting or refreshing does not resubmit a paid job. Mock integration tests check both reference payloads and submission-once behavior. Worker remains available as a separate provider.
+OpenRouter requires HTTPS audio references. After you check the temporary-sharing option, Fikr Vox uses the locally installed `cloudflared` binary to serve only the approved audio through an unguessable Cloudflare HTTPS URL. The server binds to loopback, rejects all other routes and write methods, and closes after a terminal render result or 30 minutes. Keep Fikr Vox open until the upload/render completes. The portrait is sent inline. Fikr Vox sends the exact approved audio as a reference; it does not ask the provider to synthesize a new voice. Portraits are limited to 20 MB and audio to 50 MB. The existing OpenRouter key stays in the backend. Avatar jobs use the same durable status polling and local video download as other video jobs; restarting or refreshing does not resubmit a paid job. Mock integration tests check both reference payloads and submission-once behavior. Worker remains available as a separate provider.
 
 Avatar video settings: OpenRouter / HeyGen Avatar IV offers 16:9 (landscape), 9:16 (portrait), or 1:1 (square), at 720p or 1080p, in both the Production panel and the voice-take/timeline generation dialog. Duration follows the supplied audio. Each new job snapshots and validates these options; historical jobs without options retain the 720p / 16:9 default. Worker retains 480p and source portrait proportions with a fixed-camera podcast prompt. Its accelerated/baseline choice is stored in each take and passed through both native and web job submission; old saved jobs keep their original preset. Running takes can be cancelled and completed videos download into the app automatically.
 
@@ -120,7 +122,7 @@ Avatar video settings: OpenRouter / HeyGen Avatar IV offers 16:9 (landscape), 9:
 Choose **Options → Voice provider → This Mac · Built-in**. No Voicebox app or
 local HTTP service is required. **Settings → Connections → Audio** downloads/verifies
 Qwen3 and Kokoro independently. The first download also installs a private,
-locked Python 3.11 / MLX runtime. Keep MyTwin open during setup. Network access
+locked Python 3.11 / MLX runtime. Keep Fikr Vox open during setup. Network access
 is used for package/model downloads; generation uses the downloaded cache with
 Hugging Face and Transformers offline mode enabled. No cloud fallback occurs.
 
@@ -136,14 +138,14 @@ Hugging Face and Transformers offline mode enabled. No cloud fallback occurs.
 - Local takes use the existing preview, approval, timeline, export, and avatar
   workflows. Selecting a cloud avatar provider still sends its required inputs
   to that provider; only local speech inference is offline.
-- Each generation runs in a MyTwin-owned process and releases model/GPU memory
+- Each generation runs in a Fikr Vox-owned process and releases model/GPU memory
   when finished. Jobs are serialized to avoid simultaneous model memory use.
   Prepared/queued jobs can be cancelled through the API; running inference must
   finish or the app can be closed. Interrupted takes are marked failed on restart
   and never automatically regenerated. Local scripts are limited to 12,000
   characters per take and split into bounded chunks internally.
 
-Desktop runtime/models live under `~/Library/Application Support/com.pretheesh.mytwin/local-tts/`;
+Desktop runtime/models live under `~/Library/Application Support/com.bigmints.fikr.vox/local-tts/`;
 browser mode uses `data/local-tts/`. The app bundle carries `uv`, the engine
 script, catalog, and dependency lock; it does not depend on a project checkout
 or a system Python installation after packaging. Build preparation copies the
@@ -168,14 +170,28 @@ Under This Mac · Built-in, choose speed (0.75–1.50×), extra sentence pause (
 
 Choose **Settings → Connections → Audio → VoiceStudio → Connect** and enter the server address and API key. The same saved address is used for connection checks (`/health`) and speech generation (`/generate`), including local servers and servers hosted elsewhere. Choose **VoiceStudio** under Studio → Options → Voice provider to use it. Keys remain in the backend's private secrets store. Existing installations retain their previous Worker address; new connections require an address. Each submitted take keeps the connection it started with, so editing the connection affects subsequent submissions. This is separate from the Worker worker connection.
 
-OmniVoice runs with 32 refinement passes and 16-bit WAV output. A controlled test produced unintelligible output at 64 passes, so the provider fixes the verified setting. OmniVoice is enabled for non-commercial testing under the previously accepted terms. Completed WAV takes use MyTwin's normal playback, approval and export flow. Submitted speech cannot be cancelled; interrupted requests require a new take. Verification: 51 JavaScript tests, 18 Rust tests, desktop connection check, and a live synthetic-reference cloning request.
+OmniVoice runs with 32 refinement passes and 16-bit WAV output. A controlled test produced unintelligible output at 64 passes, so the provider fixes the verified setting. OmniVoice is enabled for non-commercial testing under the previously accepted terms. Completed WAV takes use Fikr Vox's normal playback, approval and export flow. Submitted speech cannot be cancelled; interrupted requests require a new take. Verification: 51 JavaScript tests, 18 Rust tests, desktop connection check, and a live synthetic-reference cloning request.
 
 ### Studio timeline editing
 
-The studio has a video monitor and timeline beside a full-height clip inspector. Drag the divider above the timeline to resize the monitor. The video lane stays above Voice and Music; generated scenes follow their voice clip's position and source trim. Choose a preview aspect ratio (16:9, 9:16, 1:1, or 4:3), Fit/Fill, or fullscreen. These settings affect the monitor; they do not transcode existing videos or add a combined video export.
+The transport’s **Speed** selector previews the timeline at 0.25×–2×. Audio, video, and the playhead share the selected rate; changing speed during playback resumes from the same position. The choice stays with the project during this app session. Preview speed changes pitch and does not alter clip timing or exports.
+
+The studio has a video monitor and timeline beside a full-height clip inspector. Drag the divider above the timeline to resize the monitor. The video lane stays above Voice and Music; generated scenes follow their voice clip's position and source trim. Choose a preview aspect ratio (16:9, 9:16, 1:1, or 4:3), Fit/Fill, or fullscreen. **Export video** saves a combined MP4 at 1080p using the selected aspect ratio and Fit/Fill setting. It includes selected video takes, clip trims and positions, and the same voice/music mix as Export audio. Gaps are black; footage shorter than its voice clip holds its final frame. Exports keep original timing regardless of preview speed. Desktop export opens a save dialog; the local web server downloads the MP4. Video export requires macOS and Xcode command-line tools, supports timelines up to two hours, and limits output to 512 MB.
 
 Import local audio with **Music → Import music**, then move it between tracks, trim it, and mix with each track's volume and mute controls. **Export audio** includes imported music and the saved mix. Every voice draft still needs a completed take before exporting. Overlapping clips occupy separate rows within their track.
 
 Drag clip titles to move clips, drag their edges to trim, or enter precise start and source in/out times in the inspector. Snap aligns moves to other clip edges and the playhead. Zoom controls and **Fit** keep the ruler and tracks on the same scale. **B** splits at the playhead; **⌘D** duplicates; **⌘Z / ⇧⌘Z** undo/redo timeline changes. History holds the latest 50 edits for the current app session. Undoing timeline geometry preserves subsequent script and scene-description changes. **Space** plays/pauses, **S** toggles snapping, **F** fits the timeline, and **?** lists shortcuts.
 
 Twins can save a voice provider in **My Twin → Edit twin**. Select **This Mac · Built-in**, then **Kokoro · Preset voice** and a Kokoro or Qwen CustomVoice preset, a saved VoiceDesign preview, or a Qwen3 clone model. Kokoro twins need no voice recording or transcript. The Studio uses the selected twin’s saved provider/model/voice; twins with no saved provider continue using studio defaults. Existing podcast character voice overrides still take precedence.
+
+Existing macOS installations keep using the legacy MyTwin data folder when it contains studio.json and the new folder has no project database. New installations use com.bigmints.fikr.vox.
+
+### Local transcription and translation
+
+Open **Settings → Connections → Transcription** for recording-to-text providers and Whisper downloads. Open **Translation** for Apple Foundation Models and Compact multilingual:
+
+- **Whisper Base** (~150 MB) or **Whisper Small** (~500 MB) for on-device multilingual transcription. Small is the better starting point for multilingual recordings. Both can also translate speech to English.
+- **Compact multilingual (M2M100)** (~500 MB installed; ~2 GB initial conversion download) for offline text translation, including English ↔ Malayalam. Model/runtime downloads require an internet connection; inference stays local.
+- **Apple Foundation Models** for on-device text translation on eligible Macs running macOS 26 or later with Apple Intelligence enabled and its system model ready. Availability and languages are queried on the current Mac. Malayalam is not available through Apple's model on the tested Mac. This provider does not transcribe audio.
+
+Open a clip's **Script → Transcribe audio** or **Translate**, then review the result before applying. **Edit model → Transcribe locally** can fill the exact recording transcript after review. Dubbing source transcription follows the selected transcription provider. Local audio is limited to ten minutes per operation; text translation accepts up to 12,000 characters. Existing takes are retained. Translations and names need review; Whisper may misrecognize or romanize Malayalam, particularly with the compact Base model. No automatic cloud fallback is used.

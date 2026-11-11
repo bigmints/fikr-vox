@@ -1,10 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod app_data;
+mod desktop_update;
+mod collection_actions;
+mod external_links;
+mod timeline_export;
 mod dubbing;
 mod projects;
 mod native_menu;
 mod openrouter;
+mod providers;
+mod higgsfield;
 mod voicestudio;
 mod local_tts;
+mod local_language;
 mod media_share;
 mod video;
 mod store;
@@ -26,7 +34,9 @@ struct Studio {
     secrets: Arc<Mutex<Value>>,
     worker: Worker,
     openrouter: openrouter::OpenRouter,
+    providers: providers::Providers,
     local_tts: local_tts::LocalTts,
+    local_language: local_language::LocalLanguage,
 voicestudio: voicestudio::VoiceStudio,
 }
 fn array_mut<'a>(s: &'a mut Value, key: &str) -> &'a mut Vec<Value> {
@@ -65,7 +75,7 @@ fn validate_project(b: &Value) -> Result<()> {
 }
 fn prepare_job(s: &Value, b: &Value) -> Result<Value> {
 if b["provider"]=="voicestudio" && (b["kind"]!="voice" || b["engine"]!="omnivoice") {return Err("VoiceStudio supports OmniVoice speech".into());}
-    if b["kind"]=="video" {if b["provider"]!="openrouter" {return Err("Choose OpenRouter for video generation".into());}return video::prepare(s,b);}
+    if b["kind"]=="video" {if b["provider"]!="openrouter"&&!providers::is_api(&text(b,"provider")) {return Err("Choose a video provider".into());}return video::prepare(s,b);}
     let p = s["projects"]
         .as_array()
         .unwrap()
@@ -87,11 +97,26 @@ if b["provider"]=="voicestudio" && (b["kind"]!="voice" || b["engine"]!="omnivoic
     let mut request=b.clone();
     if b["kind"]=="voice" {let voice=projects::preset_voice(p,section);if !voice.is_empty(){request["voice"]=json!(voice);}}
     if request["provider"]=="local" {
-        if request["engine"]=="qwen3-design" {return Err("Preview and save a designed voice to your twin first".into());}
+        if local_tts::is_design(&text(&request,"engine")) {return Err("Preview and save a designed voice to your twin first".into());}
         if request.get("instruct").is_none(){request["instruct"]=json!(text(profile,"localVoiceInstruction"));}
     }
     let b=&request;
+if providers::is_api(&text(b,"provider")){providers::validate_voice_request(s,b)?;}
     let kind = text(b, "kind");
+    let openrouter_avatar = kind == "avatar" && b["provider"] == "openrouter";
+    let avatar_section = if openrouter_avatar { projects::section(p, section) } else { Value::Null };
+    let avatar_override = text(b, "avatarAssetId");
+    let avatar_asset_id = if avatar_override.is_empty() {
+        avatar_section["sceneImageId"].clone()
+    } else {
+        b["avatarAssetId"].clone()
+    };
+    let scene_prompt = if avatar_override.is_empty() && !text(&avatar_section, "sceneImageId").is_empty() {
+        avatar_section["scenePrompt"].clone()
+    } else {
+        b["scenePrompt"].clone()
+    };
+    let avatar_motion_prompt: String = text(&avatar_section, "avatarMotionPrompt").trim().chars().take(10_000).collect();
     if b["provider"]=="local" {local_tts::validate(b,&text(p,"language"),&text(profile,"voiceTranscript"))?;}
     let mut inputs = json!({});
     let mut source = Value::Null;
@@ -100,7 +125,7 @@ if b["provider"]=="voicestudio" && (b["kind"]!="voice" || b["engine"]!="omnivoic
             if text(section, "text").trim().is_empty() {
                 return Err("Write your narration first".into());
             }
-            if !((b["provider"] == "openrouter" && b["voiceMode"] == "preset") || (b["provider"]=="local" && local_tts::is_preset(&text(b,"engine"))))
+            if !(((b["provider"] == "openrouter" || providers::is_api(&text(b,"provider"))) && b["voiceMode"] == "preset") || (b["provider"]=="local" && local_tts::is_preset(&text(b,"engine"))))
                 && text(profile, "voiceAssetId").is_empty()
             {
                 return Err("Add a voice sample to your twin".into());
@@ -108,10 +133,18 @@ if b["provider"]=="voicestudio" && (b["kind"]!="voice" || b["engine"]!="omnivoic
             inputs["voice"] = profile["voiceAssetId"].clone();
         }
         "avatar" => {
-            let portrait=if text(b,"avatarAssetId").is_empty(){text(profile,"avatarAssetId")}else{text(b,"avatarAssetId")};
-if portrait.is_empty()||(!text(b,"avatarAssetId").is_empty()&&!s["assets"].as_array().unwrap().iter().any(|a|a["id"]==portrait&&(text(a,"type").starts_with("image/")||text(a,"type").starts_with("video/")))){return Err("Choose a clip photo or add a portrait to your twin".into());}
-inputs["avatar"]=json!(portrait);
-if p["mode"] == "audio" {
+            let portrait = avatar_asset_id.as_str().filter(|id| !id.is_empty())
+                .or_else(|| profile["avatarAssetId"].as_str()).unwrap_or_default();
+            if portrait.is_empty() {
+                return Err("Choose a clip photo or add a portrait to your twin".into());
+            }
+            if !openrouter_avatar && !avatar_override.is_empty() && !s["assets"].as_array().unwrap().iter().any(|a| {
+                a["id"] == portrait && (text(a, "type").starts_with("image/") || text(a, "type").starts_with("video/"))
+            }) {
+                return Err("Choose a clip photo or add a portrait to your twin".into());
+            }
+            inputs["avatar"] = json!(portrait);
+            if p["mode"] == "audio" {
                 let a = s["assets"]
                     .as_array()
                     .unwrap()
@@ -144,9 +177,9 @@ if p["mode"] == "audio" {
     if text(b, "engine").is_empty() {
         return Err("Choose a model".into());
     }
-    if kind=="avatar" && b["provider"]=="openrouter" { video::validate_avatar(s,&inputs,&text(b,"engine"))?; }
+    if openrouter_avatar { video::validate_avatar(s,&inputs,&text(b,"engine"))?; }
     Ok(
-        json!({"speech":if b["provider"]=="local" {local_tts::speech_options(b.get("speech").or_else(||s["settings"].get("localSpeech")))?} else {Value::Null},"id":uid(),"projectId":p["id"],"sectionId":section["id"],"projectTitle":p["title"],"sectionTitle":section["title"],"profileName":profile["name"],"profileId":profile["id"],"speakerId":projects::speaker(p,section).map(|s|s["id"].clone()).unwrap_or(json!("")),"speakerName":projects::speaker(p,section).map(|s|s["name"].clone()).unwrap_or(json!("")),"kind":kind,"preset":if kind=="avatar" && b["engine"]=="infinitetalk" && b["provider"]!="openrouter" {worker::avatar_preset(b.get("preset"))?} else {Value::Null},"referenceText":text(profile,"voiceTranscript"),"instruct":if b["provider"]=="local" && b["engine"]=="qwen3-custom" {text(b,"instruct")} else {String::new()},"provider":if b["provider"]=="voicestudio" {"voicestudio"} else if b["provider"]=="local" {"local"} else if b["provider"]=="openrouter" {"openrouter"} else {"worker"},"voiceMode":if b["provider"]=="local" {json!(if local_tts::is_preset(&text(b,"engine")) {"preset"} else {"clone"})} else {b["voiceMode"].clone()},"voice":if projects::preset_voice(p,section).is_empty(){b["voice"].clone()}else{json!(projects::preset_voice(p,section))},"engine":b["engine"],"text":section["text"],"language":p["language"],"inputs":inputs,"sourceJobId":source,"video":if kind=="avatar" && b["provider"]=="openrouter" {video::avatar_options(&b["video"])?} else {Value::Null},"audioShare":b["audioShare"]==true,"sceneImageId":b["avatarAssetId"],"scenePrompt":b["scenePrompt"],"status":"prepared","stage":"Saved","createdAt":now(),"updatedAt":now(),"approved":false}),
+        json!({"speech":if b["provider"]=="local" {if let Some(value)=b.get("speech"){local_tts::speech_options(Some(value))?}else{local_tts::voice_speech(profile,&s["settings"])?}} else {Value::Null},"id":uid(),"projectId":p["id"],"sectionId":section["id"],"projectTitle":p["title"],"sectionTitle":section["title"],"profileName":profile["name"],"profileId":profile["id"],"speakerId":projects::speaker(p,section).map(|s|s["id"].clone()).unwrap_or(json!("")),"speakerName":projects::speaker(p,section).map(|s|s["name"].clone()).unwrap_or(json!("")),"kind":kind,"preset":if kind=="avatar" && b["engine"]=="infinitetalk" && b["provider"]!="openrouter" {worker::avatar_preset(b.get("preset"))?} else {Value::Null},"referenceText":text(profile,"voiceTranscript"),"instruct":if b["provider"]=="local" && ["qwen3-custom","omnivoice"].contains(&text(b,"engine").as_str()) {text(b,"instruct")} else {String::new()},"provider":if providers::is_api(&text(b,"provider")){text(b,"provider")}else if b["provider"]=="voicestudio" {"voicestudio".to_string()} else if b["provider"]=="local" {"local".to_string()} else if b["provider"]=="openrouter" {"openrouter".to_string()} else {"worker".to_string()},"voiceMode":if b["provider"]=="local" {json!(if local_tts::is_preset(&text(b,"engine")) {"preset"} else {"clone"})} else {b["voiceMode"].clone()},"voice":if projects::preset_voice(p,section).is_empty(){b["voice"].clone()}else{json!(projects::preset_voice(p,section))},"engine":b["engine"],"text":section["text"],"language":p["language"],"inputs":inputs,"sourceJobId":source,"video":if kind=="avatar" && b["provider"]=="openrouter" {video::avatar_options(&b["video"])?} else {Value::Null},"audioShare":b["audioShare"]==true,"sceneImageId":avatar_asset_id,"scenePrompt":scene_prompt,"avatarMotionPrompt":avatar_motion_prompt,"status":"prepared","stage":"Saved","createdAt":now(),"updatedAt":now(),"approved":false}),
     )
 }
 
@@ -165,7 +198,8 @@ async fn studio_api(
         ("GET", "/state") => {
             let mut s = studio.store.read();
 s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap(),"voicestudioKey").is_empty());
-            let secrets = studio.secrets.lock().unwrap();
+            s["settings"]["providers"]=studio.providers.public();
+let secrets = studio.secrets.lock().unwrap();
             s["settings"]["openrouterConfigured"] =
                 json!(!text(&secrets, "openrouterKey").is_empty());
             s["settings"]["workerTokenConfigured"] =
@@ -176,7 +210,12 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
             }
             Ok(s)
         }
-        ("POST", "/voicestudio/check") => studio.voicestudio.check().await,
+        ("GET", "/providers/presets") => Ok(providers::presets()),
+("POST", "/providers/discover") => studio.providers.discover(&b).await,
+("POST", "/providers/save") => studio.providers.save(&b),
+("POST", "/providers/remove") => studio.providers.remove(&text(&b,"id")),
+("POST", "/providers/default") => studio.providers.use_model(&b),
+("POST", "/voicestudio/check") => studio.voicestudio.check().await,
 ("GET", "/openrouter/video-models") => studio.openrouter.video_models().await,
         ("POST", "/local-tts/preview") => studio.local_tts.preview(&b),
         ("GET", "/local-tts/status") => Ok(studio.local_tts.status()),
@@ -185,7 +224,12 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
         ("POST", "/dubbing/inspect") => dubbing::inspect(&studio.store,&text(&b,"assetId")).await,
 ("POST", "/dubbing/extract") => dubbing::extract(&studio.store,&text(&b,"assetId")).await,
 ("POST", "/dubbing/render") => dubbing::start(&studio.store,&b),
-("POST", "/listen") => studio.openrouter.listen(&text(&b, "assetId")).await,
+("GET", "/about/info") => serde_json::from_str(include_str!("../../public/app-info.json")).map_err(|e|e.to_string()),
+        ("GET", "/about/notices") => serde_json::from_str(include_str!("../../public/third-party-notices.json")).map_err(|e|e.to_string()),
+        ("GET", "/local-language/status") => Ok(studio.local_language.status().await),
+        ("POST", "/local-language/download") => studio.local_language.download(text(&b,"model")),
+        ("POST", "/translate") => studio.local_language.translate(b.clone()).await,
+        ("POST", "/listen") => {let state=studio.store.read();let provider=b["provider"].as_str().or(state["settings"]["transcriptionProvider"].as_str()).unwrap_or("local");match provider {p if providers::is_api(p)=>studio.providers.listen(p,&if text(&b,"model").is_empty(){studio.providers.default_model(p,"transcription")}else{text(&b,"model")},&text(&b,"assetId")).await,"openrouter"=>studio.openrouter.listen(&text(&b,"assetId"),&text(&b,"model")).await,"local"=>studio.local_language.listen(&b).await,_=>Err("Choose a transcription provider.".into())}},
         ("POST", "/openrouter/check") => studio.openrouter.check().await,
         ("POST", "/openrouter/details") => studio.openrouter.details(&text(&b, "model")).await,
         ("POST", "/projects") => {
@@ -243,6 +287,7 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
             })
         }
         ("PUT", "/settings") => {
+            local_language::validate_settings(&b)?;
             if let Some(preset)=b.get("workerAvatarPreset") { worker::avatar_preset(Some(preset))?; }
             let speech = b.get("localSpeech").map(|v| local_tts::speech_options(Some(v))).transpose()?;
             let voicestudio_url = b.get("voicestudioUrl").map(|v| v.as_str().ok_or_else(|| "Enter a valid VoiceStudio server address".to_string()).and_then(voicestudio::validate_url)).transpose()?;
@@ -268,6 +313,8 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
                     "model",
                     "speechModel",
                     "listeningModel",
+                    "videoProvider", "chatProvider", "transcriptionProvider", "translationProvider", "localTranscriptionModel",
+                    "videoModel",
                     "voiceMode",
                     "voice",
                     "voiceProvider",
@@ -300,10 +347,9 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
         },
         ("POST", "/write") => {
             let key = text(&studio.secrets.lock().unwrap(), "openrouterKey");
-            if key.is_empty() {
-                return Err("Add your OpenRouter key in Settings".into());
-            }
-            let model = text(&studio.store.read()["settings"], "model");
+            let chat_provider=text(&studio.store.read()["settings"],"chatProvider");
+if key.is_empty()&&!providers::is_api(&chat_provider){return Err("Add a provider key in Settings".into());}
+            let model = if providers::is_api(&chat_provider){studio.providers.default_model(&chat_provider,"chat")}else{text(&studio.store.read()["settings"], "model")};
             if model.is_empty() {
                 return Err("Choose a model in Settings".into());
             }
@@ -318,7 +364,8 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
             if text(&b, "text").trim().is_empty() {
                 return Err("Write a script or notes first".into());
             }
-            let r=reqwest::Client::new().post("https://openrouter.ai/api/v1/chat/completions").timeout(Duration::from_secs(90)).bearer_auth(key).header("X-OpenRouter-Title","MyTwin Studio").json(&json!({"model":model,"messages":[{"role":"system","content":format!("{instruction} Return only the script, without commentary or markdown. Keep the input language.")},{"role":"user","content":b["text"]}],"max_tokens":4000})).send().await.map_err(|_|"Could not reach OpenRouter")?;
+            if providers::is_api(&chat_provider){return studio.providers.chat(&chat_provider,&model,json!([{"role":"system","content":format!("{instruction} Return only the script. Keep the input language.")},{"role":"user","content":b["text"]}])).await;}
+let r=reqwest::Client::new().post("https://openrouter.ai/api/v1/chat/completions").timeout(Duration::from_secs(90)).bearer_auth(key).header("X-OpenRouter-Title","Fikr Vox").json(&json!({"model":model,"messages":[{"role":"system","content":format!("{instruction} Return only the script, without commentary or markdown. Keep the input language.")},{"role":"user","content":b["text"]}],"max_tokens":4000})).send().await.map_err(|_|"Could not reach OpenRouter")?;
             if !r.status().is_success() {
                 return Err(format!(
                     "OpenRouter returned {}. Check your key, model and credits.",
@@ -340,6 +387,9 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
         }),
         _ => {
             let parts: Vec<_> = path.trim_matches('/').split('/').collect();
+            if parts.len()>=2 && ["projects","profiles"].contains(&parts[0]) && ((method=="DELETE"&&parts.len()==2)||(method=="POST"&&parts.len()==3&&parts[2]=="duplicate")) {
+                return studio.store.update(|s|collection_actions::apply(s,parts[0],parts[1],if method=="POST"{"duplicate"}else{"delete"}));
+            }
             if method == "PUT" && parts.len() == 2 && parts[0] == "projects" {
                 validate_project(&b)?;
                 return studio.store.update(|s| {
@@ -381,7 +431,9 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
                 if j["kind"]=="dub" && parts[2]!="approve" {if parts[2]!="refresh" {return Err("Open the dubbing project to render a new preview".into());}return Ok(json!({"ok":true}));}
                 match parts[2] {
                     "submit" | "refresh" => {
-                        if j["provider"]=="voicestudio" {if parts[2]=="submit" {let config=studio.voicestudio.claim(parts[1])?;let client=studio.voicestudio.clone();let id=parts[1].to_string();tauri::async_runtime::spawn(async move{client.run(&id,config).await;});}return Ok(json!({"ok":true}));}
+                        if providers::is_api(&text(&j,"provider"))&&j["kind"]=="video"{if parts[2]=="submit"{studio.openrouter.video_claim(parts[1])?;}let client=studio.openrouter.clone();let id=parts[1].to_string();let submit=parts[2]=="submit";tauri::async_runtime::spawn(async move{client.video_run(id,submit).await;});return Ok(json!({"ok":true}));}
+                        if providers::is_api(&text(&j,"provider")){if parts[2]=="submit"{studio.providers.claim(parts[1])?;let client=studio.providers.clone();let id=parts[1].to_string();tauri::async_runtime::spawn(async move{client.run(id).await;});}return Ok(json!({"ok":true}));}
+if j["provider"]=="voicestudio" {if parts[2]=="submit" {let config=studio.voicestudio.claim(parts[1])?;let client=studio.voicestudio.clone();let id=parts[1].to_string();tauri::async_runtime::spawn(async move{client.run(&id,config).await;});}return Ok(json!({"ok":true}));}
 if j["provider"]=="local" {
                             if parts[2]=="submit" {studio.local_tts.claim(parts[1])?;let client=studio.local_tts.clone();let id=parts[1].to_string();tauri::async_runtime::spawn(async move {client.run(id).await;});}
                             return Ok(json!({"ok":true}));
@@ -406,9 +458,10 @@ if j["provider"]=="local" {
                         });
                     }
                     "cancel" => {
+if providers::is_api(&text(&j,"provider"))&&j["kind"]=="video"{studio.openrouter.higgsfield_cancel(parts[1]).await?;return Ok(json!({"ok":true}));}
 if j["provider"]=="voicestudio" && j["status"]!="prepared" {return Err("Speech is already running. Wait for the take to finish.".into());}
                         if j["provider"]=="local" {studio.local_tts.cancel(parts[1])?;return Ok(json!({"ok":true}));}
-                        if j["provider"] == "openrouter" {
+                        if j["provider"] == "openrouter" || providers::is_api(&text(&j,"provider")) {
                             if j["status"] != "prepared" {
                                 return Err("A submitted OpenRouter request cannot be cancelled here".into());
                             }
@@ -503,6 +556,8 @@ async fn import_media(studio: tauri::State<'_, Studio>, kind: String) -> Result<
         picker.add_filter("Video", &["mp4", "mov", "webm"])
     } else if kind == "audio" {
         picker.add_filter("Audio", &["wav", "mp3", "m4a", "flac", "ogg", "webm"])
+    } else if kind == "image" {
+        picker.add_filter("Image", &["png", "jpg", "jpeg", "webp"])
     } else {
         picker.add_filter(
             "Photo or video",
@@ -522,6 +577,9 @@ async fn import_path(store: &Store, path: PathBuf, kind: &str) -> Result<Value> 
     if size == 0 || size > MAX_MEDIA {
         return Err("Choose a file between 1 byte and 512 MB".into());
     }
+    if kind == "image" && size > 20 * 1024 * 1024 {
+        return Err("Use an image smaller than 20 MB".into());
+    }
     let ext = path
         .extension()
         .and_then(|x| x.to_str())
@@ -529,6 +587,8 @@ async fn import_path(store: &Store, path: PathBuf, kind: &str) -> Result<Value> 
         .to_ascii_lowercase();
     let allowed = if kind == "video" {vec!["mp4", "mov", "webm"]} else if kind == "audio" {
         vec!["wav", "mp3", "m4a", "flac", "ogg", "webm"]
+    } else if kind == "image" {
+        vec!["png", "jpg", "jpeg", "webp"]
     } else {
         vec!["png", "jpg", "jpeg", "webp", "mp4", "mov", "webm"]
     };
@@ -562,6 +622,10 @@ async fn export_spending(csv: String) -> Result<bool> {
     let Some(file) = rfd::AsyncFileDialog::new().set_title("Export spending record").set_file_name("mytwin-spending.csv").add_filter("CSV", &["csv"]).save_file().await else { return Ok(false); };
     tokio::fs::write(file.path(), csv).await.map_err(|_| "Could not save spending record")?;
     Ok(true)
+}
+#[tauri::command]
+async fn export_timeline_video(studio: tauri::State<'_, Studio>, data: String, name: String, plan: Value) -> Result<bool> {
+ timeline_export::export(&studio.store,data,name,plan).await
 }
 #[tauri::command]
 async fn export_timeline_audio(data: String, name: String) -> Result<bool> {
@@ -600,10 +664,16 @@ async fn export_media(studio: tauri::State<'_, Studio>, asset_id: String) -> Res
 
 fn main() {
     tauri::Builder::default()
+        .manage(desktop_update::DesktopUpdate::default())
         .setup(|app| {
+            desktop_update::setup(app.handle())?;
             native_menu::install(app.handle())?;
             let dir = app.path().app_data_dir()?;
+            // Preserve existing projects and cached models after the application identifier changes.
+            #[cfg(target_os = "macos")]
+            let dir = app_data::compatible_data_dir(dir);
             let store = Store::open(dir.clone()).map_err(std::io::Error::other)?;
+            app_data::allow_media(&app.asset_protocol_scope(), &store.dir)?;
             dubbing::recover(&store).map_err(std::io::Error::other)?;
             let secrets = if dir.join("secrets.json").exists() {
                 serde_json::from_slice(&fs::read(dir.join("secrets.json"))?)?
@@ -614,23 +684,28 @@ fn main() {
             let worker = Worker::new(store.clone(), secrets.clone());
             let poller = worker.clone();
             let openrouter = openrouter::OpenRouter::new(store.clone(),secrets.clone());
+let providers=providers::Providers::new(store.clone(),secrets.clone());
             store.update(|s| {for j in s["jobs"].as_array_mut().unwrap() {if j["provider"]=="openrouter" && text(j,"videoRemoteId").is_empty() && ["submitting","running"].contains(&text(j,"status").as_str()) {j["status"]=json!("failed");j["error"]=json!("Interrupted. Check OpenRouter activity before starting another take; credits may have been used.");}} Ok(())}).map_err(std::io::Error::other)?;
-            let local_resources=if cfg!(debug_assertions) {PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../local-tts")} else {app.path().resource_dir()?.join("local-tts")};
-            let local_tts=local_tts::LocalTts::new(store.clone(),local_resources);
+            store.update(|s|{for j in s["jobs"].as_array_mut().unwrap(){if providers::is_api(&text(j,"provider"))&&text(j,"videoRemoteId").is_empty()&&["submitting","running"].contains(&text(j,"status").as_str()){j["status"]=json!("failed");j["error"]=json!("Provider request interrupted. Check provider activity before trying again.");}}Ok(())}).map_err(std::io::Error::other)?;
+let local_resources=if cfg!(debug_assertions) {PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../local-tts")} else {app.path().resource_dir()?.join("local-tts")};
+            let local_tts=local_tts::LocalTts::new(store.clone(),local_resources.clone());
+            let local_language=local_language::LocalLanguage::new(store.clone(),local_tts.clone(),local_resources);
             store.update(|s|{for j in s["jobs"].as_array_mut().unwrap(){if (j["provider"]=="local" || j["provider"]=="voicestudio") && ["running","queued","submitting"].contains(&text(j,"status").as_str()){j["status"]=json!("failed");j["error"]=json!("Local speech was interrupted. Generate a new take.");}}Ok(())}).map_err(std::io::Error::other)?;
             let video_poller=openrouter.clone();
-            tauri::async_runtime::spawn(async move {loop {tokio::time::sleep(Duration::from_secs(30)).await;let s=video_poller.store.read();for j in s["jobs"].as_array().unwrap(){if text(j,"parentVideoId").is_empty()&&!text(j,"videoRemoteId").is_empty()&&["queued","running"].contains(&text(j,"status").as_str()){let client=video_poller.clone();let id=text(j,"id");tauri::async_runtime::spawn(async move {client.video_run(id,false).await;});}}}});
+            tauri::async_runtime::spawn(async move {loop {tokio::time::sleep(Duration::from_secs(30)).await;let s=video_poller.store.read();for j in s["jobs"].as_array().unwrap(){if text(j,"parentVideoId").is_empty()&&!text(j,"videoRemoteId").is_empty()&&["queued","running","cancel_requested"].contains(&text(j,"status").as_str()){let client=video_poller.clone();let id=text(j,"id");tauri::async_runtime::spawn(async move {client.video_run(id,false).await;});}}}});
             if !text(&secrets.lock().unwrap(),"voicestudioKey").is_empty() && store.read()["settings"].get("voicestudioUrl").is_none() {
                 store.update(|s|{s["settings"]["voicestudioUrl"]=json!(voicestudio::LEGACY_URL);Ok(())}).map_err(std::io::Error::other)?;
             }
             let voicestudio=voicestudio::VoiceStudio{store:store.clone(),secrets:secrets.clone()};
 app.manage(Studio {
+providers,
 voicestudio,
                 store,
                 secrets,
                 worker,
                 openrouter,
                 local_tts,
+            local_language,
             });
             tauri::async_runtime::spawn(async move {
                 loop {
@@ -653,16 +728,19 @@ voicestudio,
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            native_menu::show_project_menu,
+            desktop_update::stage_desktop_update,
+            desktop_update::install_desktop_update,
+            external_links::open_external_url,
             studio_api,
             import_media,
             save_recording,
             export_timeline_audio,
+            export_timeline_video,
             export_spending,
             export_media
         ])
         .run(tauri::generate_context!())
-        .expect("Could not launch MyTwin");
+        .expect("Could not launch Fikr Vox");
 }
 
 #[cfg(test)]
@@ -685,6 +763,25 @@ mod tests {
         s["projects"][0]["sections"][0]["text"] = json!("Changed");
         assert_eq!(j["text"], "Hello");
         assert_eq!(j["status"], "prepared");
+    }
+    #[test]
+    fn lip_sync_snapshots_saved_turn_image_and_motion() {
+        let mut s = fixture();
+        s["projects"][0]["sections"][0]["sceneImageId"] = json!("turn-photo");
+        s["projects"][0]["sections"][0]["scenePrompt"] = json!("Wide shot");
+        s["projects"][0]["sections"][0]["avatarMotionPrompt"] = json!("  Smile and nod once.  ");
+        s["assets"] = json!([
+            {"id":"turn-photo","type":"image/png"},
+            {"id":"a","type":"image/png"},
+            {"id":"audio","type":"audio/wav"}
+        ]);
+        s["jobs"] = json!([{"id":"voice","projectId":"p","sectionId":"s","kind":"voice","status":"completed","approved":true,"text":"Hello","outputId":"audio"}]);
+        let request = json!({"projectId":"p","sectionId":"s","kind":"avatar","provider":"openrouter","engine":"heygen/avatar-iv","sourceJobId":"voice"});
+        let job = prepare_job(&s, &request).unwrap();
+        assert_eq!(job["inputs"], json!({"avatar":"turn-photo","audio":"audio"}));
+        assert_eq!(job["avatarMotionPrompt"], "Smile and nod once.");
+        s["projects"][0]["sections"][0]["sceneImageId"] = json!("");
+        assert_eq!(prepare_job(&s, &request).unwrap()["inputs"]["avatar"], "a");
     }
     #[test]
     fn track_twin_overrides_character_reference_and_preset_without_changing_other_tracks() {

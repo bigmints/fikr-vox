@@ -1,0 +1,73 @@
+{
+  "source": "mlx-community/OmniVoice-bf16",
+  "revision": "8fb0b754cad788aaefec690cd55c207e8a628f85",
+  "version": 1,
+  "synthetic": true,
+  "referenceText": "Welcome to MyTwin. This is a clear and natural speaking voice. We can explore new ideas together, tell a story, and take a moment to explain each detail.",
+  "voices": {
+    "maya": {
+      "name": "Maya · Female · Medium pitch",
+      "file": "maya.wav",
+      "instruct": "female, young adult, moderate pitch",
+      "seed": 181,
+      "duration": 10.48,
+      "sha256": "1f513c48abb79829e6b950cf76803a8a643b1089eae0fb2f20d0ff4acc3cab94",
+      "malayalam": {
+        "file": "maya-ml.wav",
+        "text": "നമസ്കാരം. നമ്മുടെ പോഡ്കാസ്റ്റിലേക്ക് സ്വാഗതം. ഇന്ന് ഒരു പുതിയ ആശയം നമുക്ക് ഒരുമിച്ച് പരിചയപ്പെടാം.",
+        "instruct": "female",
+        "seed": 192,
+        "steps": 64,
+        "sha256": "b83d59c9bc9aa559dddf20b68d89904f738abd475ea42f48693a59227022a7ee"
+      }
+    },
+    "tara": {
+      "name": "Tara · Female · Lower pitch",
+      "file": "tara.wav",
+      "instruct": "female, middle-aged, low pitch",
+      "seed": 291,
+      "duration": 10.48,
+      "sha256": "572c831fc8c6cf574e6403a37d1a908655908767cffa46b0998024c244c2c73a",
+      "malayalam": {
+        "file": "tara-ml.wav",
+        "text": "നമസ്കാരം. നമ്മുടെ പോഡ്കാസ്റ്റിലേക്ക് സ്വാഗതം. ഇന്ന് ഒരു പുതിയ ആശയം നമുക്ക് ഒരുമിച്ച് പരിചയപ്പെടാം.",
+        "instruct": "female",
+        "seed": 296,
+        "steps": 64,
+        "sha256": "8ee9efbc29c859089bd2773dfe03a5a1cf852279ab79f97240625f954cc66cfb"
+      }
+    },
+    "arun": {
+      "name": "Arun · Male · Medium pitch",
+      "file": "arun.wav",
+      "instruct": "male, young adult, moderate pitch",
+      "seed": 371,
+      "duration": 10.48,
+      "sha256": "89462290dbf20908525527abe43547d35e669e33cab1a4f7a3b5c92118453189",
+      "malayalam": {
+        "file": "arun-ml.wav",
+        "text": "നമസ്കാരം. നമ്മുടെ പോഡ്കാസ്റ്റിലേക്ക് സ്വാഗതം. ഇന്ന് ഒരു പുതിയ ആശയം നമുക്ക് ഒരുമിച്ച് പരിചയപ്പെടാം.",
+        "instruct": "male",
+        "seed": 192,
+        "steps": 64,
+        "sha256": "fbe60c04130a7e2d72b344672b583c35efcfa95fb6a40e65ab0d80ac5875b82f"
+      }
+    },
+    "dev": {
+      "name": "Dev · Male · Lower pitch",
+      "file": "dev.wav",
+      "instruct": "male, middle-aged, low pitch",
+      "seed": 487,
+      "duration": 10.48,
+      "sha256": "1add03e63251ce8408ef4fde8b1868f92c7d5347b119876dfa3ccbfb093c9244",
+      "malayalam": {
+        "file": "dev-ml.wav",
+        "text": "നമസ്കാരം. നമ്മുടെ പോഡ്കാസ്റ്റിലേക്ക് സ്വാഗതം. ഇന്ന് ഒരു പുതിയ ആശയം നമുക്ക് ഒരുമിച്ച് പരിചയപ്പെടാം.",
+        "instruct": "male",
+        "seed": 487,
+        "steps": 64,
+        "sha256": "61279c00001964993de1b6a281c40f80ed0bd77533addebd204fe34910129864"
+      }
+    }
+  }
+}

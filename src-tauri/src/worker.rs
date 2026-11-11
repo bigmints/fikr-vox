@@ -90,7 +90,7 @@ impl Worker {
             .await
             .map_err(|_| "Invalid Worker response")?;
         if cap["apiVersion"] != 1 || !cap["engines"].is_array() {
-            return Err("This address needs the MyTwin Worker service".into());
+            return Err("This address needs the Fikr Vox Worker service".into());
         }
         self.store.update(|s| {
             s["settings"]["capabilities"] = cap.clone();

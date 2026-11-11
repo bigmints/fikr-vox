@@ -1,19 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MyTwin",
+  "productName": "Fikr Vox",
   "version": "0.1.0",
-  "identifier": "com.pretheesh.mytwin",
+  "identifier": "com.bigmints.fikr.vox",
   "build": {
     "frontendDist": "../public",
-    "beforeBuildCommand": "node scripts/prepare-local-tts.mjs",
-    "beforeDevCommand": "node scripts/prepare-local-tts.mjs"
+    "beforeBuildCommand": "node scripts/prepare-desktop.mjs",
+    "beforeDevCommand": "node scripts/prepare-desktop.mjs"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "title": "MyTwin",
+        "title": "Fikr Vox",
         "width": 1320,
         "height": 900,
         "minWidth": 800,
@@ -37,6 +37,10 @@
     "targets": [
       "app"
     ],
+    "externalBin": [
+      "../local-tts/uv",
+      "../local-tts/apple-language"
+    ],
     "category": "Video",
     "shortDescription": "Your personal voice and avatar studio",
     "icon": [
@@ -47,16 +51,21 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "infoPlist": "Info.plist"
+      "minimumSystemVersion": "13.0",
+      "infoPlist": "Info.plist",
+      "entitlements": "Entitlements.plist",
+      "signingIdentity": "-"
     },
     "resources": {
       "../local-tts/engine.py": "local-tts/engine.py",
       "../local-tts/catalog.json": "local-tts/catalog.json",
       "../local-tts/pyproject.toml": "local-tts/pyproject.toml",
       "../local-tts/uv.lock": "local-tts/uv.lock",
-      "../local-tts/uv": "local-tts/uv",
       "../local-tts/UV-LICENSE-MIT": "local-tts/UV-LICENSE-MIT",
-      "../local-tts/UV-LICENSE-APACHE": "local-tts/UV-LICENSE-APACHE"
+      "../local-tts/UV-LICENSE-APACHE": "local-tts/UV-LICENSE-APACHE",
+      "../local-tts/voices/": "local-tts/voices/",
+      "../local-tts/language.py": "local-tts/language.py",
+      "../local-tts/language-catalog.json": "local-tts/language-catalog.json"
     }
   }
 }

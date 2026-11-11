@@ -2,7 +2,7 @@ import {pacingTrim} from './audio-pacing.js';
 import {AudioBufferCache} from './audio-cache.js';
 import {activeVideoJob, videoJobLabel, videoJobBusy} from './job-status.js';
 import {peaksFor} from './timeline-editor.js';
-import {arrangeAudio, playbackPlan, audioTracks, editableAudioClips, linkedVideo, videoAtTime} from './timeline-model.js';
+import {arrangeAudio, playbackPlan, playbackRate, playbackPosition, timelinePlaybackRates, audioTracks, editableAudioClips, linkedVideo, videoAtTime} from './timeline-model.js';
 import {rulerStep, timelineScale, snapClipMove} from './timeline-tools.js';
 
 let suppressClipClickUntil = 0;
@@ -10,9 +10,11 @@ const audioCache=new AudioBufferCache();
 const fmt = n => `${Math.floor(n / 60)}:${(n % 60).toFixed(1).padStart(4, '0')}`;
 export function mountAudioTimeline({host, transport, clips, videoJobs = [], tracks, selected, url,
   select, selectTrack, trackStatus, change, reorder, place, updateTrack, addTrack, addSection, importMusic, editScript, editVideo,
-  exportAudio, showShortcuts, session, report, split, duplicate, remove, undo, redo, canUndo, canRedo,
+  exportAudio, exportVideo, showShortcuts, session, report, split, duplicate, remove, undo, redo, canUndo, canRedo,
   audioOnly = false, previewRatio = '16:9', previewFit = 'contain', updatePreview}) {
   let disposed = false, layout, ctx, sources = [], raf = 0, anchor = 0, base = 0;
+  let rate = playbackRate(session.playbackRate);
+  session.playbackRate = rate;
   session.waveforms??=new Map();session.clipDurations??=new Map();
   const outputIds=new Set(clips.map(c=>c.take?.outputId));
   for(const id of session.waveforms.keys())if(!outputIds.has(id))session.waveforms.delete(id);
@@ -25,7 +27,7 @@ export function mountAudioTimeline({host, transport, clips, videoJobs = [], trac
   const listen = (el, event, fn, permanent = false) => el.addEventListener(event, fn, {signal: permanent ? lifetime.signal : drawing?.signal || lifetime.signal});
   const node = (tag, cls, text) => {const el = document.createElement(tag);if (cls) el.className = cls;if (text !== undefined) el.textContent = text;return el;};
   const button = (text, label, fn, permanent = false) => {const el = node('button', '', text);el.type = 'button';el.title = label;el.setAttribute('aria-label', label);listen(el, 'click', fn, permanent);return el;};
-  const position = () => playing ? Math.min(layout?.duration || 0, Math.max(0, base + ctx.currentTime - anchor)) : session.time || 0;
+  const position = () => playing ? playbackPosition(base, ctx.currentTime - anchor, rate, layout?.duration || 0) : session.time || 0;
   function rememberViewport(){const view=pendingViewport||{left:host.scrollLeft,top:host.scrollTop};session.scrollLeft=view.left;session.scrollTop=view.top;}
   function useViewport(){pendingViewport=null;initialFit=false;rememberViewport();}
   function stop() {
@@ -43,6 +45,16 @@ export function mountAudioTimeline({host, transport, clips, videoJobs = [], trac
   const restart = button('↤', 'Back to start (Home)', () => seek(0), true);
   const play = button('▶', 'Play full timeline (Space)', toggle, true);play.className = 'transport-play';play.disabled = true;
   const clock = node('span', 'transport-time');
+  const speedControl = node('label', 'timeline-speed');
+  speedControl.title = 'Preview playback speed. Exports keep their original timing.';
+  const speed = node('select');speed.setAttribute('aria-label', 'Timeline playback speed');
+  for (const value of timelinePlaybackRates) {const option = node('option', '', value + '×');option.value = String(value);speed.append(option);}
+  speed.value = String(rate);speedControl.append(node('span', '', 'Speed'), speed);
+  listen(speed, 'change', () => {
+    const resume = playing;
+    stop();rate = playbackRate(speed.value);session.playbackRate = rate;video.defaultPlaybackRate = video.playbackRate = rate;tick();
+    if (resume) start();
+  }, true);
   const history = node('div', 'timeline-control-group');
   const undoButton = button('↶', 'Undo timeline edit (⌘Z)', () => {stop();undo?.();}, true);
   const redoButton = button('↷', 'Redo timeline edit (⇧⌘Z)', () => {stop();redo?.();}, true);
@@ -67,11 +79,12 @@ export function mountAudioTimeline({host, transport, clips, videoJobs = [], trac
   const fitButton = button('Fit', 'Fit timeline to window (F)', () => {useViewport();fit = true;session.fit = true;session.scrollLeft=0;draw(true);}, true);
   zoomGroup.append(button('−', 'Zoom out', () => setZoom(px / 1.4), true), zoom, button('+', 'Zoom in', () => setZoom(px * 1.4), true), fitButton, zoomLabel);
   const exp = button('Export audio', 'Export mixed audio as WAV', exportAudio, true);exp.id = 'export-timeline';
+  const videoExport = button('Export video', 'Export timeline as MP4', exportVideo, true);videoExport.id = 'export-timeline-video';videoExport.hidden = audioOnly || !exportVideo;
   const more = node('details', 'timeline-more'), summary = node('summary', '', '•••');summary.setAttribute('aria-label', 'Timeline options');
   const mute = button('Mute output', 'Mute preview output (M)', () => {session.muted = !session.muted;applyGains();tick();}, true);
   const timelineMenu=node('div','timeline-menu');timelineMenu.append(mute, button('Keyboard shortcuts', 'Keyboard shortcuts (?)', showShortcuts, true), button('Add voice track', 'Add voice track', () => {stop();addTrack();}, true));more.append(summary,timelineMenu);
   listen(document,'pointerdown',e=>{if(!more.contains(e.target))more.open=false;},true);
-  transport.append(restart, play, clock, history, edits, snap, zoomGroup, exp, more);
+  transport.append(restart, play, clock, speedControl, history, edits, snap, zoomGroup, exp, videoExport, more);
 
   const workspace = document.querySelector('.clip-workspace');
   const divider = node('div', 'timeline-divider');divider.tabIndex=0;divider.setAttribute('role','separator');divider.setAttribute('aria-label','Resize preview and timeline');divider.setAttribute('aria-orientation','horizontal');
@@ -109,8 +122,31 @@ export function mountAudioTimeline({host, transport, clips, videoJobs = [], trac
   monitorHeader.append(ratio, sizing, full);
   const stage = node('div', 'monitor-stage'), frame = node('div', 'monitor-frame');
   const video = node('video');video.muted = true;video.playsInline = true;video.preload = 'auto';video.setAttribute('aria-label', 'Synchronized video preview');video.hidden = true;
+  video.defaultPlaybackRate = video.playbackRate = rate;
+  // Web Audio changes pitch with playback rate; match it in the silent video.
+  video.preservesPitch = false;
   const still = node('img');still.alt = 'Scene reference at playhead';still.hidden = true;
-  const empty = node('div', 'monitor-empty');empty.append(node('span', 'monitor-empty-symbol', '▻'), node('strong', '', 'Your video preview'), node('span', '', 'Add a scene in the Video tab to get started.'));
+  const empty = node('div', 'monitor-empty');
+  const emptyArt = node('div', 'monitor-empty-art');emptyArt.setAttribute('aria-hidden', 'true');
+  emptyArt.innerHTML = '<svg viewBox="0 0 48 48"><rect x="8" y="18" width="32" height="22" rx="4"/><path d="M8 18v-8h32v8M16 10l-5 8m15-8-5 8m15-8-5 8M18 28v4m6-7v10m6-7v4"/></svg>';
+  const emptyTitle = node('strong', 'monitor-empty-title'), emptyDescription = node('p', 'monitor-empty-description');
+  const emptyAction = button('Set up video', 'Set up video', () => {
+    const eligible = clip => !clip.sec.audioAssetId || !!clip.sec.sourceTakeId;
+    const target = layout?.clips.find(clip => position() >= clip.start && position() < clip.end && eligible(clip)) || layout?.clips.find(clip => clip.sec.id === selected && eligible(clip)) || clips.find(eligible);
+    if(target && editVideo){stop();editVideo(target.sec.id);}
+  }, true);emptyAction.className = 'monitor-empty-action';emptyAction.disabled = !editVideo;
+  empty.append(emptyArt, emptyTitle, emptyDescription, emptyAction);
+  function setEmptyState(state = 'empty') {
+    if(empty.dataset.state === state)return;
+    const copy = {
+      empty: ['Your next scene starts here', 'Create a video for this clip. Your finished take will appear here.', 'Set up video'],
+      working: ['Your scene is on its way', 'You can keep editing while your video is being generated.', 'View video settings'],
+      error: ['This video couldn’t load', 'Open video settings to choose another take or generate a new one.', 'Review video settings'],
+      gap: ['No video at this moment', 'Move the playhead to a video clip, or set up a scene here.', 'Set up video']
+    }[state];
+    empty.dataset.state = state;emptyTitle.textContent = copy[0];emptyDescription.textContent = copy[1];emptyAction.textContent = copy[2];emptyAction.setAttribute('aria-label', copy[2]);
+  }
+  setEmptyState();
   frame.append(video, still, empty);stage.append(frame);
   const monitorFooter = node('div', 'monitor-footer');
   const previewPlay = button('▶', 'Play preview (Space)', toggle, true), previewClock = node('span', 'monitor-time');
@@ -122,7 +158,7 @@ export function mountAudioTimeline({host, transport, clips, videoJobs = [], trac
   listen(ratio, 'change', setPreview, true);listen(sizing, 'change', setPreview, true);
   listen(document, 'fullscreenchange', () => full.setAttribute('aria-pressed', String(document.fullscreenElement === videoPanel || videoPanel.classList.contains('preview-expanded'))), true);
   listen(video, 'loadedmetadata', () => syncVideo(position(), true), true);
-  listen(video, 'error', () => {videoFailed = true;video.hidden = true;empty.hidden = false;videoNote.textContent = 'Video unavailable';}, true);
+  listen(video, 'error', () => {videoFailed = true;video.hidden = true;empty.hidden = false;setEmptyState('error');videoNote.textContent = 'Video unavailable';}, true);
 
   function syncVideo(t, force = false) {
     if(audioOnly)return;
@@ -132,12 +168,18 @@ export function mountAudioTimeline({host, transport, clips, videoJobs = [], trac
     still.hidden = !imageId;
     if (imageId && still.dataset.asset !== imageId) {still.dataset.asset = imageId;still.src = url(imageId);}
     empty.hidden = !!job || !!imageId;
-    if (!job) {video.pause();video.hidden = true;activeVideo = null;videoNote.textContent = imageId ? 'Scene reference · video not generated' : 'No video at playhead';return;}
+    if (!job) {
+      video.pause();video.hidden = true;activeVideo = null;
+      const pending = activeVideoJob(videoJobs, scene?.sec.id || selected, scene?.take?.id);
+      setEmptyState(videoJobBusy(pending) ? 'working' : videoJobs.some(item => item.status === 'completed' && item.outputId) ? 'gap' : 'empty');
+      videoNote.textContent = imageId ? 'Scene reference · video not generated' : 'No video at playhead';return;
+    }
     if (activeVideo !== job.outputId) {video.pause();activeVideo = job.outputId;videoFailed = false;video.src = url(job.outputId);force = true;}
-    if (videoFailed) {video.hidden = true;empty.hidden = false;videoNote.textContent = 'Video unavailable';return;}
+    video.playbackRate = rate;
+    if (videoFailed) {video.hidden = true;empty.hidden = false;setEmptyState('error');videoNote.textContent = 'Video unavailable';return;}
     video.hidden = false;videoNote.textContent = match.clip.sec.title;
     if (video.readyState < 1) return;
-    if (match.time >= video.duration) {video.pause();video.hidden = true;empty.hidden = false;videoNote.textContent = 'Scene video ended';return;}
+    if (match.time >= video.duration) {video.pause();video.hidden = true;empty.hidden = false;setEmptyState('gap');videoNote.textContent = 'Scene video ended';return;}
     if (force || Math.abs(video.currentTime - match.time) > .12) video.currentTime = Math.max(0, match.time);
     if (playing && video.paused) video.play().catch(() => {});else if (!playing) video.pause();
   }
@@ -166,9 +208,10 @@ export function mountAudioTimeline({host, transport, clips, videoJobs = [], trac
       await ctx.resume();if (disposed) return;
       if ((session.time || 0) >= layout.duration) session.time = 0;
       stop();base = session.time || 0;anchor = ctx.currentTime + .03;
-      for (const entry of playbackPlan(layout.clips, base)) {
+      for (const entry of playbackPlan(layout.clips, base, rate)) {
         const c = layout.clips.find(c => c.sec.id === entry.id);if (!c.buffer) continue;
         const source = ctx.createBufferSource();source.buffer = c.buffer;source.connect(gains.get(entry.trackId));
+        source.playbackRate.value = rate;
         source.start(anchor + entry.delay, entry.offset, entry.duration);sources.push(source);
       }
       playing = true;tick();

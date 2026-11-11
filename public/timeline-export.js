@@ -17,8 +17,8 @@ export function timelineWav(parts,sampleRate=48000,tracks){
 
  return bytes;
 }
-export async function renderTimelineAudio(clips,url,onProgress=()=>{},tracks){
+export async function renderTimelineAudio(clips,url,onProgress=()=>{},tracks,onLayout=()=>{}){
  const missing=clips.filter(c=>!c.take);if(missing.length)throw Error('Add a finished audio take for: '+missing.map(c=>c.sec.title).join(', '));
  const ctx=new AudioContext({sampleRate:48000}),parts=[];let total=0;
- try{for(let i=0;i<clips.length;i++){const c=clips[i];onProgress(i+1,clips.length);const res=await fetch(url(c.take.outputId));if(!res.ok)throw Error('Could not load '+c.sec.title);const decoded=await ctx.decodeAudioData(await res.arrayBuffer());total+=decoded.length*decoded.numberOfChannels*4;if(total>512*1024*1024)throw Error('This production is too large to export in memory.');parts.push({channels:Array.from({length:Math.min(decoded.numberOfChannels,2)},(_,i)=>decoded.getChannelData(i)),trim:pacingTrim(c.sec,c.take.outputId,decoded),gapBefore:c.sec.gapBefore,sequenceId:c.sec.sequenceId,trackId:c.sec.trackId,offset:c.sec.offset});}return timelineWav(parts,ctx.sampleRate,tracks);}finally{await ctx.close();}
+ try{for(let i=0;i<clips.length;i++){const c=clips[i];onProgress(i+1,clips.length);const res=await fetch(url(c.take.outputId));if(!res.ok)throw Error('Could not load '+c.sec.title);const decoded=await ctx.decodeAudioData(await res.arrayBuffer());total+=decoded.length*decoded.numberOfChannels*4;if(total>512*1024*1024)throw Error('This production is too large to export in memory.');parts.push({channels:Array.from({length:Math.min(decoded.numberOfChannels,2)},(_,i)=>decoded.getChannelData(i)),trim:pacingTrim(c.sec,c.take.outputId,decoded),gapBefore:c.sec.gapBefore,sequenceId:c.sec.sequenceId,trackId:c.sec.trackId,offset:c.sec.offset});}onLayout(arrangeAudio(parts.map((p,i)=>({...clips[i],duration:p.channels[0].length/ctx.sampleRate,sec:{...clips[i].sec,trims:{[clips[i].take.outputId]:p.trim}}})),tracks));return timelineWav(parts,ctx.sampleRate,tracks);}finally{await ctx.close();}
 }
