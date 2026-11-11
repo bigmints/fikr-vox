@@ -1,7 +1,11 @@
-# VoiceStudio deployment files
+# VoiceStudio Compose example
 
-VoiceStudio is an optional self-hosted speech provider. In Fikr Vox, open **Settings → Connections → Audio → VoiceStudio** to enter your server URL and API key.
+VoiceStudio is an optional self-hosted speech provider. The pinned [Compose example](compose.yaml) targets an ARM64 Linux host with an NVIDIA GPU and Docker Compose.
 
-This directory contains a pinned ARM64 Compose example for an NVIDIA GPU host, a smoke-test script, and dashboard integration files. Review the bind addresses and volume paths in [`compose.yaml`](compose.yaml) before using it on another host. Set `OMNIVOICE_API_KEY` in a local `.env` file.
+Set `OMNIVOICE_API_KEY` in a local `.env` file. The example binds port 3900 to loopback and stores application data and models in `./data` and `./models`. For an existing installation, set `VOICESTUDIO_DATA_DIR` and `VOICESTUDIO_MODELS_DIR` to its current directories before starting the service. Set `VOICESTUDIO_BIND_ADDRESS` if a trusted private network needs direct access.
 
-The example disables Torch compilation and selects PyTorch Whisper for compatibility with the original GPU environment. VoiceStudio and its models have their own usage terms.
+```sh
+docker compose up -d
+```
+
+In Fikr Vox, enter your server URL and API key under **Settings → Connections → Audio → VoiceStudio**. The Compose example disables Torch compilation and selects PyTorch Whisper for GPU compatibility. VoiceStudio and its models have their own usage terms.

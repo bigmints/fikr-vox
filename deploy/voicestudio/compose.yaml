@@ -5,7 +5,7 @@ services:
     container_name: voicestudio
     restart: always
     ports:
-      - "127.0.0.1:3900:3900"
+      - "${VOICESTUDIO_BIND_ADDRESS:-127.0.0.1}:3900:3900"
     environment:
       OMNIVOICE_API_KEY: ${OMNIVOICE_API_KEY:?Set a private API key in the deployment .env file}
       OMNIVOICE_DATA_DIR: /app/omnivoice_data
@@ -15,8 +15,8 @@ services:
       OMNIVOICE_ASR_BACKEND: pytorch-whisper
       OMNIVOICE_PYTORCH_ASR_MODEL: openai/whisper-large-v3
     volumes:
-      - /home/operator/services/voicestudio/data:/app/omnivoice_data
-      - /home/operator/llms/speech/voicestudio:/models
+      - ${VOICESTUDIO_DATA_DIR:-./data}:/app/omnivoice_data
+      - ${VOICESTUDIO_MODELS_DIR:-./models}:/models
     deploy:
       resources:
         reservations:

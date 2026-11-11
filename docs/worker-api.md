@@ -1,6 +1,6 @@
 # Fikr Vox worker API v1
 
-Fikr Vox uses this HTTP API to discover remote engines, upload reference media, and track jobs. The [InfiniteTalk adapter](../worker/) is historical. The app rejects new InfiniteTalk submissions and marks unfinished InfiniteTalk jobs as failed.
+Fikr Vox uses this HTTP API to discover remote engines, upload reference media, and track jobs. Fikr Vox rejects new InfiniteTalk submissions and marks unfinished InfiniteTalk jobs as failed. Completed takes remain available.
 
 When a connection token is configured, the client sends `Authorization: Bearer <token>`. Serve the API over HTTPS outside a trusted network. Use `application/json` for JSON responses and return errors as `{"error":"message"}` with the appropriate HTTP status.
 
