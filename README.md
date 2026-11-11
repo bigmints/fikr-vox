@@ -4,9 +4,9 @@ Fikr Vox is an open-source studio for voiceovers, podcasts, and video dubbing on
 
 [Read the user guide](https://fikr.one/vox/docs/) · [GitHub Releases](https://github.com/bigmints/fikr-vox/releases)
 
-![Fikr Vox podcast video workspace with the recording preview, video clips, and separate speaker tracks](website/dist/assets/podcast-video.jpg)
+![Fikr Vox podcast video workspace with an interview preview, linked video clips, and separate tracks for Guru and Max](website/dist/assets/podcast-video-interview.jpg)
 
-[View the podcast audio workspace](website/dist/assets/podcast-audio.jpg)
+[View the podcast audio workspace](website/dist/assets/podcast-audio-interview.jpg)
 
 ## What you can make
 
