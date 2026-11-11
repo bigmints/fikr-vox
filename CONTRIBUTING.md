@@ -1,6 +1,6 @@
 # Contributing to Fikr Vox
 
-Use [GitHub Issues](https://github.com/bigmints/Fikr-Vox/issues) for bugs and feature requests. For a bug, include the app version or commit, your macOS version, whether you used the desktop app or browser server, and steps to reproduce it. Remove API keys and personal media before attaching logs or examples. Report vulnerabilities privately using the [security policy](SECURITY.md).
+Use [GitHub Issues](https://github.com/bigmints/fikr-vox/issues) for bugs and feature requests. For a bug, include the app version or commit, your macOS version, whether you used the desktop app or browser server, and steps to reproduce it. Remove API keys and personal media before attaching logs or examples. Report vulnerabilities privately using the [security policy](SECURITY.md).
 
 ## Development
 
@@ -24,19 +24,18 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Copy `.env.example` to `.en
 | [`local-tts/`](local-tts/) | Python speech engine, model catalog, and dependency lockfile |
 | [`test/`](test/) | Application and integration tests |
 | [`website/`](website/README.md) | Landing page, interactive demo, and user guide |
-| [`docs/worker-api.md`](docs/worker-api.md) | Remote worker API contract |
+| [`docs/`](docs/) | Remote worker API and macOS release runbook |
 
 Check both backends when changing shared behavior or a saved data format.
 
 ## Tests
 
-Run the Node and Rust suites on macOS with the Xcode command-line tools installed. Media tests use Swift and AVFoundation. Provider tests use mocks and temporary project data.
+Run the suites on an Apple silicon Mac with the source-build prerequisites installed. The Node media tests use Swift and AVFoundation. The Rust command prepares the desktop bundle resources before running the locked tests. Provider tests use mocks and temporary project data.
 
 ```sh
 npm ci
 npm test
-node scripts/prepare-local-tts.mjs
-npm run test:rust -- --locked
+npm run test:rust
 ```
 
 On an Apple silicon Mac, use the pinned Python dependencies to test speech engine changes.

@@ -9,13 +9,13 @@
 
   <section class="doc-section" id="installation">
     <h2>Install Fikr Vox</h2>
-    <p>Fikr Vox runs on macOS with Apple silicon. Check <a href="https://github.com/bigmints/Fikr-Vox/releases">GitHub Releases</a> for packaged builds.</p>
+    <p>Fikr Vox runs on Apple silicon Macs with macOS 13 or later. Check <a href="https://github.com/bigmints/fikr-vox/releases">GitHub Releases</a> for packaged builds.</p>
     <h3>Run from source</h3>
-    <p>Install Node.js 22 or newer, Rust, Xcode command-line tools, and <code>uv</code>. You'll need internet access to install dependencies and download voice models. <a href="https://v2.tauri.app/start/prerequisites/">Tauri prerequisites</a> · <a href="https://docs.astral.sh/uv/getting-started/installation/">Install uv</a></p>
+    <p>Install Node.js 22 or newer, Rust, Xcode with the macOS 26 SDK or newer, Python 3, and <code>uv</code> on your PATH. You'll need internet access to install dependencies and download voice models. <a href="https://v2.tauri.app/start/prerequisites/">Tauri prerequisites</a> · <a href="https://docs.astral.sh/uv/getting-started/installation/">Install uv</a></p>
     <div class="command">
       <button aria-live="polite" class="copy" data-copy>Copy</button>
-      <pre><code>git clone https://github.com/bigmints/Fikr-Vox.git
-cd Fikr-Vox
+      <pre><code>git clone https://github.com/bigmints/fikr-vox.git
+cd fikr-vox
 npm ci
 npm run desktop</code></pre>
     </div>
@@ -41,8 +41,10 @@ npm run desktop</code></pre>
     <h3>Local voices</h3>
     <p>Open <strong>Settings → Connections → Audio</strong> to download a model. Kokoro provides preset voices. Qwen3 offers voice cloning, presets with delivery controls, and voice design from a description. The first download installs a pinned Python 3.11 runtime. Generation runs offline after setup.</p>
     <p>To clone a voice, open <strong>My Models</strong>, create or edit a model, and choose a Qwen3 cloning engine. Import or record a clean voice sample and enter its transcript. Use recordings and portraits you have permission to use.</p>
+    <h3>Transcription and translation</h3>
+    <p>Download Whisper under <strong>Settings → Connections → Transcription</strong> to turn recordings into text on your Mac. Open <strong>Translation</strong> to set up Compact multilingual or Apple Foundation Models. Apple's option requires macOS 26 and an eligible Mac with Apple Intelligence enabled.</p>
     <h3>Cloud providers</h3>
-    <p>Open <strong>Settings → Connections</strong> and select <strong>Connect</strong> beside OpenRouter. Enter your key, then use <strong>Manage → Model choices</strong> to select models. Capabilities vary by model. Your provider may charge for requests.</p>
+    <p>Open <strong>Settings → Connections</strong> and select <strong>Connect</strong> beside OpenRouter. Enter your key, then select <strong>Refresh models</strong> in the relevant connection group. Choose a voice or transcription model when editing a profile under <strong>My Models</strong>. Capabilities vary by model. Your provider may charge for requests.</p>
   </section>
 
   <section class="doc-section" id="podcasts">
@@ -75,7 +77,7 @@ Guest: Today we're talking about how this project got started.</code></pre>
 
   <section class="doc-section" id="storage">
     <h2>Storage and privacy</h2>
-    <p>The desktop app stores projects, media, and voice models in <code>~/Library/Application Support/com.pretheesh.mytwin/</code>. The browser development server uses a separate <code>data/</code> directory in the checkout.</p>
+    <p>New desktop installations store projects, media, and voice models in <code>~/Library/Application Support/com.bigmints.fikr.vox/</code>. Existing installations can continue using <code>com.pretheesh.mytwin</code> when that folder contains the project database. The browser development server uses a separate <code>data/</code> directory in the checkout.</p>
     <p>Provider keys are stored locally in an unencrypted file with owner-only permissions. Cloud actions send the required inputs to the selected provider. Remove credentials and personal media before sharing logs or project backups.</p>
   </section>
 
@@ -87,12 +89,12 @@ Guest: Today we're talking about how this project got started.</code></pre>
     <p>Check the provider key, credit balance, and model capabilities. Review provider activity before retrying an interrupted paid request.</p>
     <h3>Narration doesn't fit the video</h3>
     <p>Move the start time earlier, shorten the script, or choose <strong>Fit to remaining video</strong>. For import or rendering errors, try an H.264 MP4 and check that the Xcode command-line tools are installed.</p>
-    <p>Include your macOS version, app version or commit, and steps to reproduce the problem when asking for help. <a href="https://github.com/bigmints/Fikr-Vox/issues">Open a GitHub issue</a></p>
+    <p>Include your macOS version, app version or commit, and steps to reproduce the problem when asking for help. <a href="https://github.com/bigmints/fikr-vox/issues">Open a GitHub issue</a></p>
   </section>
 
   <section class="doc-section" id="contributing">
     <h2>Contribute</h2>
-    <p>The desktop app uses Rust and Tauri. The desktop and browser versions share an HTML, CSS, and JavaScript interface. <a href="https://github.com/bigmints/Fikr-Vox/blob/main/CONTRIBUTING.md">Development and testing guide</a></p>
+    <p>The desktop app uses Rust and Tauri. The desktop and browser versions share an HTML, CSS, and JavaScript interface. <a href="https://github.com/bigmints/fikr-vox/blob/main/CONTRIBUTING.md">Development and testing guide</a></p>
   </section>
 
   <section class="doc-section" id="license">
@@ -100,4 +102,4 @@ Guest: Today we're talking about how this project got started.</code></pre>
     <p>Fikr Vox's source code is available under the MIT License. Third-party libraries, models, and connected services have their own terms. <a href="../LICENSE.txt">Read the MIT License</a></p>
   </section>
 </article>
-</main><footer class="footer wrap"><div class="footer-main"><div><a class="brand" href="/"><img alt="" src="/main-assets/fikr-logo.svg?v=mono"/>Fikr</a><p>Capture an idea. Make sense of it.<br/>See what you can create.</p></div><div class="footer-group"><strong>The Fikr family</strong><a href="/app">Fikr Go</a><a href="/studio">Fikr Studio</a><a href="/cowork">Fikr Cowork</a><a href="/vox/">Fikr Vox</a></div><div class="footer-group"><strong>Get started</strong><a href="/register">Create an account</a><a href="/login">Sign in</a><a href="/#pricing">Plans &amp; pricing</a><a href="/vox/docs/">Vox documentation</a></div><div class="footer-group"><strong>Good to know</strong><a href="/privacy">Privacy policy</a><a href="/terms">Terms of use</a><a href="/data-privacy">Data &amp; account deletion</a><a href="https://github.com/bigmints/Fikr-Vox">Fikr Vox on GitHub ↗</a><a href="mailto:support@fikr.app">Contact support</a></div></div><div class="footer-bottom"><span>© Fikr · A place for your ideas.</span><span>Go. Studio. Cowork. Vox.</span></div></footer></body></html>
+</main><footer class="footer wrap"><div class="footer-main"><div><a class="brand" href="/"><img alt="" src="/main-assets/fikr-logo.svg?v=mono"/>Fikr</a><p>Capture an idea. Make sense of it.<br/>See what you can create.</p></div><div class="footer-group"><strong>The Fikr family</strong><a href="/app">Fikr Go</a><a href="/studio">Fikr Studio</a><a href="/cowork">Fikr Cowork</a><a href="/vox/">Fikr Vox</a></div><div class="footer-group"><strong>Get started</strong><a href="/register">Create an account</a><a href="/login">Sign in</a><a href="/#pricing">Plans &amp; pricing</a><a href="/vox/docs/">Vox documentation</a></div><div class="footer-group"><strong>Good to know</strong><a href="/privacy">Privacy policy</a><a href="/terms">Terms of use</a><a href="/data-privacy">Data &amp; account deletion</a><a href="https://github.com/bigmints/fikr-vox">Fikr Vox on GitHub ↗</a><a href="mailto:support@fikr.app">Contact support</a></div></div><div class="footer-bottom"><span>© Fikr · A place for your ideas.</span><span>Go. Studio. Cowork. Vox.</span></div></footer></body></html>
