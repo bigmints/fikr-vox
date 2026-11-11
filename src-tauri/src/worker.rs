@@ -13,7 +13,7 @@ pub fn avatar_preset(value: Option<&Value>) -> Result<Value> {
     match value {
         None => Ok(json!("lightx2v-4")),
         Some(Value::String(s)) if s=="lightx2v-4" || s=="baseline" => Ok(json!(s)),
-        _ => Err("Choose a supported Worker avatar preset.".into()),
+        _ => Err("Choose a supported legacy avatar preset.".into()),
     }
 }
 
@@ -28,7 +28,7 @@ fn submission(job: &Value, inputs: Value) -> Result<Value> {
 }
 
 pub fn validate_url(base: &str) -> Result<String> {
-    let u = reqwest::Url::parse(base).map_err(|_| "Enter a valid Worker address")?;
+    let u = reqwest::Url::parse(base).map_err(|_| "Enter a valid worker address")?;
     if !["http", "https"].contains(&u.scheme())
         || !u.username().is_empty()
         || u.password().is_some()
@@ -69,15 +69,15 @@ impl Worker {
         response: std::result::Result<reqwest::Response, reqwest::Error>,
     ) -> Result<reqwest::Response> {
         let r = response.map_err(|e| {
-            if e.is_timeout() { "Worker connection timed out. Retrying the existing job automatically.".to_string() }
-            else { format!("Worker connection failed: {e:?}").chars().take(1000).collect::<String>() }
+            if e.is_timeout() { "Remote worker connection timed out. Retrying the existing job automatically.".to_string() }
+            else { format!("Remote worker connection failed: {e:?}").chars().take(1000).collect::<String>() }
         })?;
         if !r.status().is_success() {
             let status = r.status().as_u16();
             let detail = r.json::<Value>().await.ok()
                 .and_then(|v| v["error"].as_str().map(|s| s.chars().take(1000).collect::<String>()));
             return Err(detail.unwrap_or_else(|| format!(
-                "Worker returned {status}. Check the connection key and service."
+                "Remote worker returned {status}. Check the connection key and service."
             )));
         }
         Ok(r)
@@ -88,9 +88,9 @@ impl Worker {
             .await?
             .json::<Value>()
             .await
-            .map_err(|_| "Invalid Worker response")?;
+            .map_err(|_| "Invalid worker response")?;
         if cap["apiVersion"] != 1 || !cap["engines"].is_array() {
-            return Err("This address needs the Fikr Vox Worker service".into());
+            return Err("This address must implement the Fikr Vox worker API".into());
         }
         self.store.update(|s| {
             s["settings"]["capabilities"] = cap.clone();
@@ -126,16 +126,16 @@ impl Worker {
             return Ok(());
         }
         if job["engine"] == "infinitetalk" {
-            self.store.patch_job(id, json!({"status":"failed","stage":"Removed","error":"InfiniteTalk was removed from Worker. Choose another avatar provider."}))?;
+            self.store.patch_job(id, json!({"status":"failed","stage":"Removed","error":"InfiniteTalk was retired. Choose another avatar provider."}))?;
             return Ok(());
         }
         let base = text(&s["settings"], "workerUrl");
         if base.is_empty() {
-            return Err("Connect Worker in Settings, then start this job.".into());
+            return Err("Connect a remote worker in Settings, then start this job.".into());
         }
         let original = text(&job, "workerUrl");
         if !original.is_empty() && original != base {
-            return Err("Restore this job’s original Worker address before checking it.".into());
+            return Err("Restore this job’s original worker address before checking it.".into());
         }
         let cap = self.check().await?;
         if text(&job, "remoteId").is_empty() {
@@ -145,7 +145,7 @@ impl Worker {
                 .iter()
                 .any(|e| e["id"] == job["engine"] && e["kind"] == job["kind"] && e["ready"] == true)
             {
-                return Err("This model is not ready on Worker.".into());
+                return Err("This model is not ready on the remote worker.".into());
             }
             self.store.patch_job(id,json!({"status":"submitting","stage":"Sending files","workerUrl":base,"error":null}))?;
             let mut inputs = serde_json::Map::new();
@@ -172,14 +172,14 @@ impl Worker {
                 .await
                 .map_err(|_| "Invalid file transfer response")?;
                 if text(&result, "id").is_empty() {
-                    return Err("Worker returned an invalid file ID".into());
+                    return Err("Remote worker returned an invalid file ID".into());
                 }
                 inputs.insert(k.clone(), result["id"].clone());
             }
             let token = text(&self.secrets.lock().unwrap(), "workerToken");
             let result=Self::checked(self.client.post(format!("{}/v1/jobs",validate_url(&base)?)).bearer_auth(token).header("Idempotency-Key",id).json(&submission(&job,json!(inputs))?).send().await).await?.json::<Value>().await.map_err(|_|"Invalid submission response")?;
             if text(&result, "id").is_empty() {
-                return Err("Worker returned an invalid job ID".into());
+                return Err("Remote worker returned an invalid job ID".into());
             }
             job["remoteId"] = result["id"].clone();
             self.store.patch_job(
@@ -208,7 +208,7 @@ impl Worker {
         ]
         .contains(&status.as_str())
         {
-            return Err("Worker returned an unknown job status".into());
+            return Err("Remote worker returned an unknown job status".into());
         }
         if status != "completed" {
             return self.store.patch_job(
@@ -260,7 +260,7 @@ impl Worker {
                 file.write_all(&chunk).await.map_err(|e| e.to_string())?;
             }
             if size == 0 {
-                return Err("Worker returned an empty file".into());
+                return Err("Remote worker returned an empty file".into());
             }
             file.sync_all().await.map_err(|e| e.to_string())?;
             Ok(())
@@ -336,7 +336,7 @@ mod tests {
         let worker=Worker::new(store.clone(),Arc::new(Mutex::new(json!({}))));
         for id in ["running","prepared","finished"] {worker.run(id.into()).await;}
         let state=store.read();let jobs=state["jobs"].as_array().unwrap();
-        for job in &jobs[..2] {assert_eq!(job["status"],"failed");assert!(text(job,"error").contains("removed from Worker"));}
+        for job in &jobs[..2] {assert_eq!(job["status"],"failed");assert!(text(job,"error").contains("retired"));}
         assert_eq!(jobs[2]["status"],"completed");assert_eq!(jobs[2]["outputId"],"saved-video");
         std::fs::remove_dir_all(dir).unwrap();
     }

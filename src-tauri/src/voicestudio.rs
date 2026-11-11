@@ -1,7 +1,6 @@
 use crate::store::{now, text, uid, Result, Store};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
-pub const LEGACY_URL: &str = "https://voicestudio.example.invalid:9444";
 pub fn validate_url(value: &str) -> Result<String> {
     if value.len() > 2000 {
         return Err("Enter a valid VoiceStudio server address".into());

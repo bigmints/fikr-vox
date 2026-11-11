@@ -44,3 +44,9 @@ local-tts/apple-language-aarch64-apple-darwin
 # Generated About panel resources
 /public/app-info.json
 /public/third-party-notices.json
+
+# Local signing keys and certificates
+*.key
+*.p8
+*.p12
+*.pem

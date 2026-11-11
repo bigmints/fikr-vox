@@ -91,7 +91,7 @@ export function mountDubbing(host,ctx) {
     if(!alive)return;
     const state=getState(),jobs=state.jobs.filter(j=>j.projectId===p.id),voice=currentDubVoice(state,p),source=state.assets.find(a=>a.id===d.videoAssetId);
     let setup='',request;
-    try {request=dubbingVoiceRequest(state,p);setup=`${request.provider==='local'?'On this Mac':request.provider==='openrouter'?'OpenRouter · Uses credits':request.provider==='voicestudio'?'VoiceStudio':'Worker'} · ${request.engine} · Twin voice clone`;}
+    try {request=dubbingVoiceRequest(state,p);setup=`${request.provider==='local'?'On this Mac':request.provider==='openrouter'?'OpenRouter · Uses credits':request.provider==='voicestudio'?'VoiceStudio':'Remote worker'} · ${request.engine} · Twin voice clone`;}
     catch(error){setup=error.message;}
     $('#dub-voice-settings').textContent=setup;
     const voiceBusy=jobs.some(j=>j.kind==='voice'&&['submitting','queued','running','waiting'].includes(j.status));

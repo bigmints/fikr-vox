@@ -4,7 +4,7 @@ export const workerAvatarPresets = [
 ];
 
 export function workerPreset(value='lightx2v-4') {
-  if (!workerAvatarPresets.some(p=>p.id===value)) throw Object.assign(new Error('Choose a supported Worker avatar preset.'),{status:400});
+  if (!workerAvatarPresets.some(p=>p.id===value)) throw Object.assign(new Error('Choose a supported legacy avatar preset.'),{status:400});
   return value;
 }
 
