@@ -8,7 +8,7 @@ Fikr Vox is an open-source studio for voiceovers, podcasts, and video dubbing on
 
 ## What you can make
 
-- **Voiceovers.** Use Kokoro preset voices or clone a voice from a recording with Qwen3. Both run on your Mac after the model download.
+- **Voiceovers.** Use Kokoro preset voices or clone a voice from a recording with Qwen3. Both run on your Mac after the model download and require macOS 14 or later.
 - **Podcasts.** Import dialogue with speaker labels, assign voices, mix voice and music tracks, and export a WAV file.
 - **Dubbed videos.** Replace a video's audio with new narration and export an MP4.
 - **Scene and presenter videos.** Connect OpenRouter to generate scenes or animate a portrait using an approved voice take.
@@ -25,7 +25,7 @@ cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple
 npm run desktop
 ```
 
-In the app, open **Settings → Connections → Audio** and download Kokoro or a Qwen3 model. Create a **Story Telling**, **Podcast**, or **Video Dubbing** project, then add a script and generate a voice take. See the [user guide](https://fikr.one/vox/docs/) for packaging, voice profiles, exports, and troubleshooting.
+In the app, open **Settings → Connections → Audio** to download a voice model or connect a speech provider. Create a **Story Telling**, **Podcast**, or **Video Dubbing** project, then add a script and generate a voice take. See the [user guide](https://fikr.one/vox/docs/) for packaging, voice profiles, exports, and troubleshooting.
 
 ## Contribute
 
