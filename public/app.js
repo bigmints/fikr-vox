@@ -30,7 +30,6 @@ const podcastAudioOnly=()=>isPodcast(current())&&!podcastVideoViews.has(current(
 import {modelPrice,videoEstimate} from './model-pricing.js';
 const native = !!window.__TAURI__;
 document.body.classList.toggle('mac-shell',native);
-if(native)document.querySelector('.brand').textContent='MyTwin';
 const invoke = (command,args={}) => window.__TAURI__.core.invoke(command,args);
 let nativeRefs = {};
 let twinCleanup = null;
@@ -525,7 +524,7 @@ function renderQueue(){
 function renderSettings(){mountSettings(content,{settings:state.settings,getSettings:()=>state.settings,modelPicker,initModelPickers,closeModelPicker,renderLocalSettings,api,refresh,loadModels,navigate:next=>action(()=>navigate(next)),connection});}
 function renderSpending(){mountSpending(content,spendingJobs,{refresh:()=>action(async()=>{await refresh();if(view==='spending')renderSpending();}),exportCsv:csv=>action(async()=>{
  if(native){if(await invoke('export_spending',{csv}))toast('Spending record exported.');return;}
- const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='mytwin-spending.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
+ const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='fikr-vox-spending.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
 })});}
 async function write(actionName,button){await save();const target=section(),project=current(),original=target.text;button.disabled=true;button.textContent='Working…';try{const result=await api('/write','POST',{action:actionName,text:original});showDialog(`<div class="dialog-head"><h2>Review your ${actionName==='draft'?'draft':'revision'}</h2><button data-close class="subtle">✕</button></div><label>Suggested narration<textarea id="suggestion-text">${escape(result.text)}</textarea></label><div class="dialog-actions"><button data-close>Discard</button><button class="primary" id="apply-suggestion">Apply revision</button></div>`);$('#apply-suggestion').onclick=()=>action(async()=>{if(target.text!==original)throw new Error('The script changed while generating. Copy the suggestion before closing.');target.previousText=original;target.text=$('#suggestion-text').value;projectId=project.id;sectionId=target.id;edit();await save();closeDialog();render();toast('Revision applied.');});}finally{button.disabled=false;button.textContent=actionName[0].toUpperCase()+actionName.slice(1);}}
 async function action(fn){try{await fn();}catch(e){toast(e.message||String(e));}}

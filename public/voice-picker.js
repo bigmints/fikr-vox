@@ -37,7 +37,7 @@ export function mountVoicePicker(host,{existing,modelHost,api,getState,refresh,a
   const ready=!!(status?.supported&&status.models[engine()]?.ready);
   $('twin-generate-preview').disabled=pending||!ready;$('twin-generate-preview').textContent=pending?'Making your preview…':'Preview voice';
   $('twin-download-voice').hidden=!status?.supported||!!status.models[engine()]?.ready;$('twin-download-voice').disabled=pending||!!status?.busy;
-  $('twin-preview-status').textContent=pending?'Making your preview on this Mac. This may take a moment.':!status?'Checking available voices…':!status.supported?'Voice previews need an Apple Silicon Mac.':status.busy?'Downloading a voice pack. Keep MyTwin open.':status.error||(!ready?'Download this voice pack once to get started.':'Ready to preview · Stays on this Mac · No credits needed');showVoices();
+  $('twin-preview-status').textContent=pending?'Making your preview on this Mac. This may take a moment.':!status?'Checking available voices…':!status.supported?'Voice previews need an Apple Silicon Mac.':status.busy?'Downloading a voice pack. Keep Fikr Vox open.':status.error||(!ready?'Download this voice pack once to get started.':'Ready to preview · Stays on this Mac · No credits needed');showVoices();
  }
  function update(resetText=false,wanted){
   const e=engine(),preset=isLocalPreset(e),design=e==='qwen3-design',langs=Object.entries(status?.models[e]?.languages||{[language]:language==='en'?'English':language}),previous=wanted||language;

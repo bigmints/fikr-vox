@@ -119,7 +119,7 @@ if(b.openrouterKey!==undefined)secrets.openrouterKey=str(b.openrouterKey,1000);
       }
       if(path==='/api/worker/check'&&req.method==='POST'){
         const s=store.read();if(!s.settings.workerUrl)throw fail('Add the Worker worker URL first.');
-        try{const cap=await (await workerClient(s.settings.workerUrl,await token(),fetcher)('/v1/capabilities')).json();if(cap.apiVersion!==1||!Array.isArray(cap.engines))throw fail('This endpoint is not a MyTwin v1 worker.');await store.update(s=>Object.assign(s.settings,{workerStatus:'connected',capabilities:cap}));return send(cap);}catch(e){await store.update(s=>s.settings.workerStatus='disconnected');throw fail(e.message,502);}
+        try{const cap=await (await workerClient(s.settings.workerUrl,await token(),fetcher)('/v1/capabilities')).json();if(cap.apiVersion!==1||!Array.isArray(cap.engines))throw fail('This endpoint is not a Fikr Vox v1 worker.');await store.update(s=>Object.assign(s.settings,{workerStatus:'connected',capabilities:cap}));return send(cap);}catch(e){await store.update(s=>s.settings.workerStatus='disconnected');throw fail(e.message,502);}
       }
       if(path==='/api/write'&&req.method==='POST'){
         const b=await jsonBody(req),key=secrets.openrouterKey||process.env.OPENROUTER_API_KEY;
@@ -127,7 +127,7 @@ if(b.openrouterKey!==undefined)secrets.openrouterKey=str(b.openrouterKey,1000);
         const model=store.read().settings.model;if(!model)throw fail('Choose an OpenRouter model in Settings.',422);
         const actions={polish:'Polish the narration for natural spoken delivery. Preserve facts and intent.',shorten:'Shorten the narration while preserving the essential facts.',expand:'Expand these notes into spoken narration. Do not invent factual claims.',draft:'Turn these notes into a clear spoken script. Do not invent factual claims.'};
         if(!actions[b.action]||!str(b.text,50000).trim())throw fail('Enter a script or notes first.');
-        const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json','X-OpenRouter-Title':'MyTwin Studio'},body:JSON.stringify({model,messages:[{role:'system',content:`${actions[b.action]} Return only the script, without commentary or markdown. Keep the input language unless instructed otherwise.`},{role:'user',content:str(b.text,50000)}],max_tokens:4000})});
+        const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json','X-OpenRouter-Title':'Fikr Vox'},body:JSON.stringify({model,messages:[{role:'system',content:`${actions[b.action]} Return only the script, without commentary or markdown. Keep the input language unless instructed otherwise.`},{role:'user',content:str(b.text,50000)}],max_tokens:4000})});
         if(!response.ok)throw fail(`OpenRouter returned HTTP ${response.status}. Check your key, model access and credits.`,502);
         const result=await response.json(),text=result.choices?.[0]?.message?.content;if(typeof text!=='string'||!text.trim())throw fail('The model returned no usable script.',502);return send({text,model});
       }
@@ -168,9 +168,9 @@ if(job.provider==='local'&&jm[2]!=='approve'){if(jm[2]==='submit'){await localTt
       }
       if(path.startsWith('/api/'))throw fail('Endpoint not found.',404);
       if(req.method!=='GET')throw fail('Method not allowed.',405);
-      const files={'/page-gallery.js':'page-gallery.js','/twin-editor.js':'twin-editor.js','/twin-models.js':'twin-models.js','/spending.js':'spending.js','/spending-model.js':'spending-model.js','/audio-cache.js':'audio-cache.js','/podcast-markdown.js':'podcast-markdown.js','/dubbing.js':'dubbing.js','/dubbing-model.js':'dubbing-model.js','/local-voices.js':'local-voices.js','/voice-picker.js':'voice-picker.js','/':'index.html','/app.js':'app.js','/settings.js':'settings.js','/audio-pacing.js':'audio-pacing.js','/worker-presets.js':'worker-presets.js','/project-model.js':'project-model.js','/podcast-tracks.js':'podcast-tracks.js','/podcast-audio.js':'podcast-audio.js','/video-plan.js':'video-plan.js','/provider-errors.js':'provider-errors.js','/job-status.js':'job-status.js','/global-queue.js':'global-queue.js','/model-pricing.js':'model-pricing.js','/voice-recorder.js':'voice-recorder.js','/timeline-editor.js':'timeline-editor.js','/timeline-export.js':'timeline-export.js','/timeline-model.js':'timeline-model.js','/timeline-tools.js':'timeline-tools.js','/audio-timeline.js':'audio-timeline.js','/style.css':'style.css'};
+      const files={'/app-icon.svg':'app-icon.svg','/page-gallery.js':'page-gallery.js','/twin-editor.js':'twin-editor.js','/twin-models.js':'twin-models.js','/spending.js':'spending.js','/spending-model.js':'spending-model.js','/audio-cache.js':'audio-cache.js','/podcast-markdown.js':'podcast-markdown.js','/dubbing.js':'dubbing.js','/dubbing-model.js':'dubbing-model.js','/local-voices.js':'local-voices.js','/voice-picker.js':'voice-picker.js','/':'index.html','/app.js':'app.js','/settings.js':'settings.js','/audio-pacing.js':'audio-pacing.js','/worker-presets.js':'worker-presets.js','/project-model.js':'project-model.js','/podcast-tracks.js':'podcast-tracks.js','/podcast-audio.js':'podcast-audio.js','/video-plan.js':'video-plan.js','/provider-errors.js':'provider-errors.js','/job-status.js':'job-status.js','/global-queue.js':'global-queue.js','/model-pricing.js':'model-pricing.js','/voice-recorder.js':'voice-recorder.js','/timeline-editor.js':'timeline-editor.js','/timeline-export.js':'timeline-export.js','/timeline-model.js':'timeline-model.js','/timeline-tools.js':'timeline-tools.js','/audio-timeline.js':'audio-timeline.js','/style.css':'style.css'};
       if(!files[path])throw fail('Not found.',404);
-      const body=await readFile(join(root,'public',files[path]));res.setHeader('Content-Type',({'html':'text/html','js':'text/javascript','css':'text/css'})[extname(files[path]).slice(1)]);res.end(body);
+      const body=await readFile(join(root,'public',files[path]));res.setHeader('Content-Type',({'html':'text/html','js':'text/javascript','css':'text/css','svg':'image/svg+xml'})[extname(files[path]).slice(1)]);res.end(body);
     }catch(e){if(!res.headersSent)send({error:e.status?e.message:'The operation failed. Check the connection or retry.'},e.status||500);else res.end();}
   });
   const timer=setInterval(()=>{for(const j of store.read().jobs)if(j.remoteId&&['queued','running','cancel_requested','waiting'].includes(j.status))void orchestrator.run(j.id);},5000);timer.unref();
@@ -180,5 +180,5 @@ if(job.provider==='local'&&jm[2]!=='approve'){if(jm[2]==='submit'){await localTt
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
   const {server}=await createApp();const port=Number(process.env.PORT)||4317;
-  server.listen(port,'127.0.0.1',()=>console.log(`MyTwin Studio: http://127.0.0.1:${port}`));
+  server.listen(port,'127.0.0.1',()=>console.log(`Fikr Vox: http://127.0.0.1:${port}`));
 }

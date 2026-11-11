@@ -23,5 +23,5 @@ export async function startVoiceRecording({onTime,onLimit,isCancelled}){
   source.connect(processor);processor.connect(context.destination);
   timer=setInterval(()=>onTime(Math.floor(count/context.sampleRate)),250);
   return {stop(){if(closed)return null;closed=true;cleanup();if(count<context.sampleRate)throw Error('Record at least one second of speech.');return new File([wavBytes(chunks,context.sampleRate)],'voice-recording.wav',{type:'audio/wav'});},cancel(){closed=true;cleanup();chunks=[];}};
- }catch(e){cleanup();if(e.name==='NotAllowedError'||e.name==='SecurityError')throw Error('Microphone access was denied. Allow MyTwin in System Settings → Privacy & Security → Microphone, then try again.');if(e.name==='NotFoundError')throw Error('No microphone found. Connect a microphone and try again.');throw e;}
+ }catch(e){cleanup();if(e.name==='NotAllowedError'||e.name==='SecurityError')throw Error('Microphone access was denied. Allow Fikr Vox in System Settings → Privacy & Security → Microphone, then try again.');if(e.name==='NotFoundError')throw Error('No microphone found. Connect a microphone and try again.');throw e;}
 }

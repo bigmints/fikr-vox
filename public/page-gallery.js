@@ -2,7 +2,7 @@ const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&
 const glyphs={audio:'M4 10v4m4-8v12m4-15v18m4-14v10m4-7v4',video:'M3 5h13v14H3z M16 10l6-4v12l-6-4',search:'M21 21l-5-5 M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',play:'m9 5 11 7-11 7z',plus:'M12 4v16M4 12h16',arrow:'M5 12h14m-6-6 6 6-6 6'};
 const glyph=name=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${glyphs[name]||glyphs.audio}"/></svg>`;
 export const projectKind=p=>p.projectType==='podcast'?'Podcast':p.projectType==='dubbing'?'Video dubbing':'Story';
-const initials=name=>String(name||'MyTwin').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
+const initials=name=>String(name||'Fikr Vox').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
 export function projectArtwork(p,state,job){
  const visual=id=>state.assets.find(a=>a.id===id&&/^(image|video)\//.test(a.type));
  const profiles=[p?.profileId,...(p?.podcast?.speakers||[]).map(s=>s.profileId),...(p?.tracks||[]).map(t=>t.profileId)];

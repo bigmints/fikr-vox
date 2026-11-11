@@ -1,5 +1,6 @@
-if (location.hostname === 'bigmints.github.io' && location.pathname.startsWith('/vox-studio')) {
-  location.replace('https://fikr.one/vox' + location.pathname.slice('/vox-studio'.length) + location.search + location.hash);
+const pagesPath = location.pathname.match(/^\/(?:fikr-vox|vox-studio)(?=\/|$)/i);
+if (location.hostname === 'bigmints.github.io' && pagesPath) {
+  location.replace('https://fikr.one/vox' + (location.pathname.slice(pagesPath[0].length) || '/') + location.search + location.hash);
 }
 const menu = document.querySelector('[data-menu]');
 const links = document.getElementById('nav-links');

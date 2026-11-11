@@ -1,63 +1,25 @@
 # Fikr Vox website
 
-Static marketing site and documentation for GitHub Pages. No build or runtime dependencies.
+`dist/` contains the Fikr Vox landing page, user guide, and interactive podcast demo. The demo plays prepared Kokoro recordings and runs in the browser without an API key. `main/` contains the shared Fikr marketing pages and assets.
 
-## Preview
+## Preview locally
 
-From this directory, run `python3 -m http.server 4321 --directory dist` and open http://localhost:4321.
-
-## Deploy
-
-`.github/workflows/pages.yml` publishes `website/dist` on pushes to `main` that change the website, or via manual dispatch. Repository Pages settings must use GitHub Actions as the source.
-
-Production URL: https://fikr.one/vox/
-
-Relative asset and navigation paths support the repository subpath. The interactive studio preview mirrors the app’s podcast dialogue, inspector, and timeline layout. `dist/assets/preview.js` implements editable turns, speaker assignment, reordering, duplication, deletion, track mute/volume, timing, seeking, and prepared Kokoro neural voice playback. Demo audio is rendered with the app’s installed Kokoro engine (George and Heart). Both lines are available in both voices. Edited text needs a new take in the desktop app; no browser speech fallback is used. No API key or backend is used. `dist/assets/site.js` provides mobile navigation and documentation copy buttons.
-
-## Packaged releases
-
-No packaged release existed when this site was created. Download CTAs currently lead to a source download and build instructions. Once a signed installer is published, replace the download section and relevant docs/FAQ text with its verified GitHub release asset URL and system requirements.
-
-## fikr.one/vox hosting
-
-The canonical site is https://fikr.one/vox/. GitHub Pages remains a mirror.
-
-DNS and live configuration confirm that fikr.one points directly to Cloud Run service `web-service` in project `example-project`, region `us-central1`. The Firebase Hosting site has no custom domains, so publishing there does not update fikr.one.
-
-`cloudrun/vox-entry.cjs` serves only `/vox` and `/vox/**`. All other HTTP requests and WebSocket upgrades are forwarded to the existing Next.js application, with request methods, bodies, cookies, and authorization headers preserved. Audio supports byte ranges for seeking. The existing app runs on internal port 8081; the route layer listens on the Cloud Run ingress port.
-
-The deployment image derives from the exact immutable image already deployed, without rebuilding the main application or including unrelated local source changes. `cloudrun/Dockerfile` is built from the `website` context with a verified `FIKR_BASE_IMAGE` build argument. Use the configured `example-deploy` identity for builds and releases.
-
-Verification:
-
-```sh
-node --test website/cloudrun/vox-entry.test.cjs
-```
-
-Deploy a no-traffic revision first, verify `/vox/`, `/vox/docs/`, audio byte ranges, and the existing homepage/API behavior, then move traffic to the verified revision. Keep the previous revision available for rollback.
-
-The earlier `scripts/deploy-fikr-hosting.py` helper is retained for Firebase-hosted domains. It checks the domain association before changing a release and refuses to deploy this domain because it is not bound to Firebase Hosting.
-
-The verified live deployment is recorded in `cloudrun/deployment.json`. Rollback, if needed:
-
-```sh
-gcloud --configuration=example-deploy run services update-traffic web-service --project=example-project --region=us-central1 --to-revisions=web-service-00097-mah=100
-```
-
-## Unified Fikr marketing site
-
-`main/` contains the redesigned Fikr homepage, Go/Studio/Cowork product pages, and legal-page presentation. The main navigation and footer are shared in the rendered Vox pages as well. The homepage showcase is reserved for four short idea stories. Product previews and the interactive Vox studio live on their product pages. Vox audio URLs resolve from its script path.
-
-The route layer serves the exact marketing routes and `/main-assets/`, while `/login`, `/register`, `/subscribe`, `/dashboard`, `/api/**`, and all other app routes continue to reach the existing Next.js application. Pricing values, app-store links, contact address, and legal wording were retained from the original published site.
-
-Local preview:
+From the repository root, run the preview server and open [http://127.0.0.1:4322/vox/](http://127.0.0.1:4322/vox/).
 
 ```sh
 node website/scripts/preview-main.cjs
 ```
 
-Open http://127.0.0.1:4322/. In this preview only, backend routes redirect to the live site. Development source and build assets for the original Fikr site were backed up locally before editing; private snapshots are intentionally excluded from Git.
+Open [the local user guide](http://127.0.0.1:4322/vox/docs/) to verify documentation changes. The preview server redirects backend routes to the live Fikr site. Run the routing tests before opening a pull request.
 
-The main Fikr source also contains synchronized public/fikr-marketing, public/main-assets, and public/vox files, with targeted Next.js beforeFiles rewrites and public-static-path allowances, so its future standard source deployments retain this design. Existing uncommitted application source was preserved.
+```sh
+node --test website/cloudrun/vox-entry.test.cjs
+```
 
-The four homepage story backgrounds are original monochrome SVG patterns in main/assets/story-*.svg, selected by the story tab and displayed full bleed with a legibility overlay.
+## Publishing
+
+The [Pages workflow](../.github/workflows/pages.yml) publishes `dist/` to GitHub Pages. Its entry points redirect to the corresponding paths on the [project website](https://fikr.one/vox/).
+
+Production runs on Cloud Run. The router in [`cloudrun/`](cloudrun/) serves the marketing routes, shared assets, and `/vox/`. It proxies application routes and WebSocket upgrades to the upstream app. The deployment uses the existing application image as its base.
+
+Before moving production traffic, verify the Vox landing page, user guide, audio range requests, and upstream application routes on a no-traffic revision. Retain the prior revision for rollback.

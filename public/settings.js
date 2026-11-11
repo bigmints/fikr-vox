@@ -10,7 +10,7 @@ const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ico
 const services = {
   openrouter:{name:'OpenRouter',key:'openrouterKey',configured:'openrouterConfigured',help:'Paste your OpenRouter API key. The same key connects Chat, Audio, and Video.',note:'Cloud generation uses your OpenRouter credits.'},
   voicestudio:{name:'VoiceStudio',key:'voicestudioKey',configured:'voicestudioConfigured',url:'voicestudioUrl',urlLabel:'Server address',placeholder:'http://localhost:9444',help:'Enter your VoiceStudio server address and API key.',note:'OmniVoice · For non-commercial testing.'},
-  worker:{name:'Worker worker',key:'workerToken',configured:'workerTokenConfigured',url:'workerUrl',urlLabel:'Worker address',placeholder:'http://worker.local:8000',help:'Enter the address and connection key for your MyTwin worker.',note:'Connect to a worker you have already set up on your Worker.'},
+  worker:{name:'Worker worker',key:'workerToken',configured:'workerTokenConfigured',url:'workerUrl',urlLabel:'Worker address',placeholder:'http://worker.local:8000',help:'Enter the address and connection key for your Fikr Vox worker.',note:'Connect to a worker you have already set up on your Worker.'},
 };
 const localModels = {
   kokoro:['Kokoro','54 preset voices for multilingual speech.'],
@@ -202,7 +202,7 @@ export function renderLocalModelSettings(host, status, {download,refresh}) {
     const busy=status.busy&&status.engine===key;
     const label=busy?'Downloading…':!status.supported?'Apple Silicon required':model.ready?'Downloaded':'Not downloaded';
     return row(`${escape(name)}<span class="connection-kind">Local</span>`,escape(description),`<span class="settings-status ${model.ready?'is-ready':''}">${label}</span><button type="button" data-local-download="${escape(key)}" ${status.busy||!status.supported?'disabled':''} aria-label="${model.ready?'Verify':'Download'} ${escape(name)}">${busy?'Downloading…':model.ready?'Verify':'Download'}</button>`,`data-connection-row data-search="${escape(`audio local this mac download ${name} ${description} ${key} ${model.ready?'downloaded ready installed':''}`.toLowerCase())}"`);
-  }).join('')+`<div class="local-download-footer"><p role="status" class="settings-status" data-local-status>${status.busy?'Setup is in progress. Keep MyTwin open.':status.error?escape(status.error):!status.supported?'Local models require a Mac with an Apple Silicon chip.':'The first download also installs the speech runtime. Allow several minutes and several GB of storage.'}</p><button type="button" class="settings-inline-action" data-local-refresh>Refresh status</button></div>`;
+  }).join('')+`<div class="local-download-footer"><p role="status" class="settings-status" data-local-status>${status.busy?'Setup is in progress. Keep Fikr Vox open.':status.error?escape(status.error):!status.supported?'Local models require a Mac with an Apple Silicon chip.':'The first download also installs the speech runtime. Allow several minutes and several GB of storage.'}</p><button type="button" class="settings-inline-action" data-local-refresh>Refresh status</button></div>`;
   const output=host.querySelector('[data-local-status]');
   if(status.error)output.dataset.state='error';
   host.querySelectorAll('[data-local-download]').forEach(button=>button.onclick=async()=>{

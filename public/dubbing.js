@@ -8,7 +8,7 @@ export function mountDubbing(host,ctx) {
   let alive=true,busy=false,sourceVersion=0,metadata=null,inspected='',videoModel='',transcript=null,existingOptions='',transcribing=false;
   const $=s=>host.querySelector(s);
   host.innerHTML=`<div class="dubbing-studio">
-    <header class="dub-header"><div><span class="eyebrow">MYTWIN STUDIO</span><h2>${e(p.title)}</h2><p>Video Dubbing · Your video, your voice</p></div><div class="dub-header-actions"><span id="save-state">Saved</span><button data-rename>Rename</button><button data-open-project>Open</button><button data-new>New project</button></div></header>
+    <header class="dub-header"><div><span class="eyebrow">Fikr Vox</span><h2>${e(p.title)}</h2><p>Video Dubbing · Your video, your voice</p></div><div class="dub-header-actions"><span id="save-state">Saved</span><button data-rename>Rename</button><button data-open-project>Open</button><button data-new>New project</button></div></header>
     <div class="dub-layout"><div class="dub-canvas">
       <section class="dub-preview-card"><div class="dub-card-heading"><h3>Source video</h3><span id="dub-source-meta" role="status">Choose a video to begin</span></div><div id="dub-source-preview" class="dub-monitor"></div></section>
       <section class="dub-preview-card"><div class="dub-card-heading"><h3>Dubbed preview</h3><span id="dub-result-status" role="status" aria-live="polite"></span></div><div id="dub-output" class="dub-monitor"></div><div id="dub-export"></div></section>

@@ -254,7 +254,7 @@ impl OpenRouter {
         }
         self.store
             .patch_job(id, json!({"status":"running","stage":"Creating voice"}))?;
-        let r=self.client.post(format!("{}/audio/speech",self.base)).bearer_auth(self.key()?).header("X-OpenRouter-Title","MyTwin").json(&body).send().await.map_err(|_|"Speech request interrupted. Check OpenRouter activity before starting another take; credits may have been used.")?;
+        let r=self.client.post(format!("{}/audio/speech",self.base)).bearer_auth(self.key()?).header("X-OpenRouter-Title","Fikr Vox").json(&body).send().await.map_err(|_|"Speech request interrupted. Check OpenRouter activity before starting another take; credits may have been used.")?;
         let mut r = Self::checked(r).await?;
         let mime = r
             .headers()

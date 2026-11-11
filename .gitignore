@@ -28,3 +28,10 @@ secrets.json
 
 # Private source/design snapshots retained locally for the owner
 /design-backups/
+
+# Local test exports and review captures
+/outputs/
+/podcast-angles/
+/*.png
+/*.jpg
+/local-tts/uv-*-apple-darwin

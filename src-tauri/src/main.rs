@@ -318,7 +318,7 @@ s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap
             if text(&b, "text").trim().is_empty() {
                 return Err("Write a script or notes first".into());
             }
-            let r=reqwest::Client::new().post("https://openrouter.ai/api/v1/chat/completions").timeout(Duration::from_secs(90)).bearer_auth(key).header("X-OpenRouter-Title","MyTwin Studio").json(&json!({"model":model,"messages":[{"role":"system","content":format!("{instruction} Return only the script, without commentary or markdown. Keep the input language.")},{"role":"user","content":b["text"]}],"max_tokens":4000})).send().await.map_err(|_|"Could not reach OpenRouter")?;
+            let r=reqwest::Client::new().post("https://openrouter.ai/api/v1/chat/completions").timeout(Duration::from_secs(90)).bearer_auth(key).header("X-OpenRouter-Title","Fikr Vox").json(&json!({"model":model,"messages":[{"role":"system","content":format!("{instruction} Return only the script, without commentary or markdown. Keep the input language.")},{"role":"user","content":b["text"]}],"max_tokens":4000})).send().await.map_err(|_|"Could not reach OpenRouter")?;
             if !r.status().is_success() {
                 return Err(format!(
                     "OpenRouter returned {}. Check your key, model and credits.",
@@ -559,7 +559,7 @@ async fn import_path(store: &Store, path: PathBuf, kind: &str) -> Result<Value> 
 #[tauri::command]
 async fn export_spending(csv: String) -> Result<bool> {
     if csv.len() > 16 * 1024 * 1024 { return Err("Spending record is too large".into()); }
-    let Some(file) = rfd::AsyncFileDialog::new().set_title("Export spending record").set_file_name("mytwin-spending.csv").add_filter("CSV", &["csv"]).save_file().await else { return Ok(false); };
+    let Some(file) = rfd::AsyncFileDialog::new().set_title("Export spending record").set_file_name("fikr-vox-spending.csv").add_filter("CSV", &["csv"]).save_file().await else { return Ok(false); };
     tokio::fs::write(file.path(), csv).await.map_err(|_| "Could not save spending record")?;
     Ok(true)
 }
@@ -662,7 +662,7 @@ voicestudio,
             export_media
         ])
         .run(tauri::generate_context!())
-        .expect("Could not launch MyTwin");
+        .expect("Could not launch Fikr Vox");
 }
 
 #[cfg(test)]

@@ -1,5 +1,15 @@
 {
-  "name": "mytwin-studio",
+  "name": "fikr-vox",
+  "description": "An open-source studio for voiceovers, podcasts, and video dubbing on Mac.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bigmints/Fikr-Vox.git"
+  },
+  "homepage": "https://fikr.one/vox/",
+  "bugs": {
+    "url": "https://github.com/bigmints/Fikr-Vox/issues"
+  },
   "private": true,
   "type": "module",
   "scripts": {

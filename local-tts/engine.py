@@ -1,4 +1,4 @@
-"""MyTwin-owned, one-operation MLX process. JSON on stdin; final JSON on stdout.
+"""Fikr Vox-owned, one-operation MLX process. JSON on stdin; final JSON on stdout.
 
 Downloads are explicit. Generation uses only the local cache, and process exit
 releases Metal memory. No HTTP listener or third-party desktop app is involved.
@@ -133,7 +133,7 @@ def load_reference(path, sample_rate=24000):
         try:
             audio = np.asarray(load_audio(path, sample_rate=sample_rate), dtype=np.float32)
         except Exception as exc:
-            raise ValueError("Cannot decode this voice recording. Import a WAV, FLAC or MP3 recording, or record it again in MyTwin.") from exc
+            raise ValueError("Cannot decode this voice recording. Import a WAV, FLAC or MP3 recording, or record it again in Fikr Vox.") from exc
     else:
         if not 3 <= info.frames / info.samplerate <= 30:
             raise ValueError("Use a clean voice reference between 3 and 30 seconds.")

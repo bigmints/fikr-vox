@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-func invalid(_ message: String) -> NSError { NSError(domain: "MyTwin", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+func invalid(_ message: String) -> NSError { NSError(domain: "Fikr Vox", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
 func emit(_ value: [String: Any]) throws { print(String(data: try JSONSerialization.data(withJSONObject: value), encoding: .utf8)!) }
 Task {
  do {
