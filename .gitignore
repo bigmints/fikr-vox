@@ -17,10 +17,6 @@ local-tts/.venv/
 .venv*/
 Linly-Talker/
 
-# Local deployment data and snapshots
-deploy/voicestudio/models/
-deploy/voicestudio/live/
-deploy/voicestudio/results/
 *.orig
 *.rej
 .DS_Store
