@@ -9,6 +9,7 @@ linly-models/
 __pycache__/
 
 local-tts/uv
+local-tts/uv-aarch64-apple-darwin
 local-tts/.venv/
 
 # Downloaded runtimes, models, and third-party checkout
@@ -29,9 +30,16 @@ secrets.json
 # Private source/design snapshots retained locally for the owner
 /design-backups/
 
-# Local test exports and review captures
+# Compiled on-device Apple language helper
+local-tts/apple-language
+local-tts/apple-language-aarch64-apple-darwin
+
+# Local exports and review captures
 /outputs/
 /podcast-angles/
 /*.png
 /*.jpg
-/local-tts/uv-*-apple-darwin
+
+# Generated About panel resources
+/public/app-info.json
+/public/third-party-notices.json

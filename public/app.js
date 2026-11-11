@@ -1,17 +1,24 @@
-import {mountLibrary,mountTwins,projectArtwork,artwork,bindArtwork} from './page-gallery.js';
+import {currentVideoProvider,videoProviderChoices,videoProviderModels,defaultVideoModel} from './video-providers.js';
+import {collectionMenu,bindCollectionMenus} from './collection-menu.js';
+import {mountTextTool} from './text-tools.js';
+import {twinLanguages,apiProviderModels,apiSpeechSettings} from './twin-models.js';
+import {mountLibrary,mountTwins} from './page-gallery.js';
+import {mountQueue} from './page-queue.js';
 import {mountDubbing} from './dubbing.js';
 import {mountSpending} from './spending.js';
 let spendingJobs=[];
-let dubbingWorkspace=null;
-import {localEngineChoices,isLocalPreset,defaultLocalVoice,localVoiceChoices} from './local-voices.js';
+let dubbingWorkspace=null,queueWorkspace=null;
+const queuePreferences={type:'all',status:'all',search:''};
+import {localEngineChoices,isLocalPreset,localSpeechFor,defaultLocalVoice,localVoiceChoices} from './local-voices.js';
 import {mountTwinEditor} from './twin-editor.js';
 import {isVideoTake,videoTakeBelongsToClip} from './video-takes.js';
 import {linkedVideo} from './timeline-model.js';
 import {ensurePodcastTracks,speakerTrackId} from './podcast-tracks.js';
 import {mountSettings,renderLocalModelSettings} from './settings.js';
+import {desktopUpdates} from './desktop-updates.js';
 import {podcastPacing,pacingTrim} from './audio-pacing.js';
-import {podcastVoiceRequest,voiceSnapshot,voiceIdentity,selectedVoiceTake,timelineVoiceTake,voiceTakeBelongsToClip,planPodcastAudio,planTrackAudio,runPodcastAudio} from './podcast-audio.js';
-import {isPodcast,defaultPodcast,speakerFor,profileIdFor,voiceTrackFor,presetVoiceFor,matchesSpeaker,projectSection,normalizePodcast} from './project-model.js';
+import {podcastVoiceRequest,voiceSnapshot,voiceIdentity,selectedVoiceTake,timelineVoiceTake,voiceTakeBelongsToClip,planPodcastAudio,planTrackAudio,planVoiceSections,runPodcastAudio} from './podcast-audio.js';
+import {audiobookChapterId,audiobookChapters,isAudiobook,isPodcast,defaultPodcast,parsePodcastScript,speakerFor,profileIdFor,voiceTrackFor,presetVoiceFor,matchesSpeaker,projectSection,normalizePodcast} from './project-model.js';
 import {parsePodcastMarkdown} from './podcast-markdown.js';
 import {providerError} from './provider-errors.js';
 import {workerAvatarPresets} from './worker-presets.js';
@@ -21,11 +28,13 @@ import {activeVideoJob,videoJobLabel,videoJobBusy,voiceClipState} from './job-st
 import {mountAudioTimeline} from './audio-timeline.js';
 import {splitClip,restoreTimelineSections,moveClipPlacement} from './timeline-tools.js';
 import {renderTimelineAudio} from './timeline-export.js';
+import {timelineVideoPlan} from './timeline-video.js';
 import {mountTimeline,moveClip} from './timeline-editor.js';
 let disposeTimeline=null,disposeInspector=null;
 let inspectorCollapsed=localStorage.getItem('mytwin-sidebar-collapsed')==='1',inspectorWidth=Number(localStorage.getItem('mytwin-sidebar-width'))||380;
 const podcastRuns=new Map(),podcastVideoViews=new Set();
 const podcastAudioOnly=()=>isPodcast(current())&&!podcastVideoViews.has(current().id);
+const audioWorkspaceOnly=()=>isAudiobook(current())||podcastAudioOnly();
 
 import {modelPrice,videoEstimate} from './model-pricing.js';
 const native = !!window.__TAURI__;
@@ -37,30 +46,43 @@ let localStatus=null;
 let speechDetails = {}, catalogBusy = false, videoSelection = "";
 const $=s=>document.querySelector(s);
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const paths={spending:'M4 3h16v18H4z M8 7h8 M8 11h8 M8 15h3',studio:'M4 4h16v16H4z M9 4v16 M13 9l4 3-4 3z',library:'M4 5h16v15H4z M8 2h8 M8 9h8 M8 13h5',twin:'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M4 21v-2a8 8 0 0 1 16 0v2',queue:'M4 6h11 M4 12h8 M4 18h6 M17 11v4l3 2 M22 15a5 5 0 1 1-10 0 5 5 0 0 1 10 0',settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2',wave:'M3 10v4 M7 6v12 M11 3v18 M15 7v10 M19 5v14 M23 10v4',plus:'M12 5v14 M5 12h14',spark:'M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z',upload:'M12 16V3 M7 8l5-5 5 5 M4 15v6h16v-6',video:'M3 5h13v14H3z M16 10l6-4v12l-6-4',check:'M5 12l4 4L19 6'};
+const paths={story:'M3 9h18v11H3z M3 9 2 5l18-4 1 4L3 9 M8 4l1 4 M14 3l1 4 M10 12l5 3-5 3z',mic:'M12 3a3 3 0 0 1 3 3v5a3 3 0 1 1-6 0V6a3 3 0 0 1 3-3z M5 11a7 7 0 0 0 14 0 M12 18v3 M9 21h6',book:'M12 6c-3-2-6-2-10-1v14c4-1 7-1 10 1 3-2 6-2 10-1V5c-4-1-7-1-10 1v14',spending:'M4 3h16v18H4z M8 7h8 M8 11h8 M8 15h3',studio:'M4 4h16v16H4z M9 4v16 M13 9l4 3-4 3z',library:'M4 5h16v15H4z M8 2h8 M8 9h8 M8 13h5',twin:'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M4 21v-2a8 8 0 0 1 16 0v2',queue:'M4 6h11 M4 12h8 M4 18h6 M17 11v4l3 2 M22 15a5 5 0 1 1-10 0 5 5 0 0 1 10 0',settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2',wave:'M3 10v4 M7 6v12 M11 3v18 M15 7v10 M19 5v14 M23 10v4',plus:'M12 5v14 M5 12h14',spark:'M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z',upload:'M12 16V3 M7 8l5-5 5 5 M4 15v6h16v-6',video:'M3 5h13v14H3z M16 10l6-4v12l-6-4',check:'M5 12l4 4L19 6'};
 const icon=k=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[k]||paths.wave}"/></svg>`;
-let state,view='studio',projectId=localStorage.getItem('mytwin-project'),sectionId=null,saveTimer,saveChain=Promise.resolve(),dirty=false,draftVersion=0,toastTimer;
+let state,view='library',returnToProject=false,projectId=localStorage.getItem('mytwin-project'),sectionId=null,saveTimer,saveChain=Promise.resolve(),dirty=false,draftVersion=0,toastTimer;
 const content=$('#content');
 const current=()=>state?.projects.find(p=>p.id===projectId);
 const section=()=>current()?.sections.find(s=>s.id===sectionId)||current()?.sections[0];
 function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').style.display='none',5000);}
+const updates=native?desktopUpdates({invoke,restartButton:$('#restart-update'),beforeInstall:async()=>{await save();if(dirty)throw Error('Unsaved edits');},notify:toast}):null;
 async function api(path,method='GET',body){if(native){try{return await invoke('studio_api',{path,method,body:body||null});}catch(e){throw new Error(String(e));}}const r=await fetch('/api'+path,{method,headers:body?{'Content-Type':'application/json'}:{},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Request failed');return data;}
 async function refresh(){const fresh=await api('/state');spendingJobs=fresh.jobs;fresh.jobs=fresh.jobs.filter(j=>!j.parentVideoId);if(current()&&(dirty||view==='studio')){const p=current();fresh.projects=fresh.projects.map(x=>x.id===p.id?p:x);}state=fresh;if(!current())projectId=state.projects[0]?.id;connection();updateGlobalQueue();}
 function assetUrl(id){const a=state.assets.find(a=>a.id===id);return native&&a?.localPath?window.__TAURI__.core.convertFileSrc(a.localPath):'/api/assets/'+encodeURIComponent(id);}
-function connection(){$('#connection').classList.toggle('online',state.settings.workerStatus==='connected');$('#connection').innerHTML=`<span class="dot"></span>${state.settings.workerStatus==='connected'?'Worker connected':'Worker offline'}`;}
-function render(){content.querySelectorAll('.gallery-page audio').forEach(a=>a.pause());dubbingWorkspace?.dispose();dubbingWorkspace=null;disposeInspector?.();disposeInspector=null;disposeTimeline?.();disposeTimeline=null;document.body.classList.toggle('timeline-studio',view==='studio');document.body.classList.toggle('settings-view',view==='settings');document.body.classList.toggle('detail-view',view!=='studio');document.body.classList.toggle('queue-view',view==='queue');closeModelPicker();const names={studio:'Studio',library:'Productions',twin:'My Models',queue:'Queue',spending:'Spending',settings:'Settings'};$('.brand').innerHTML=icon('wave');$('#page-title').textContent=names[view];$('#nav').innerHTML=Object.entries(names).map(([k,v])=>`<button data-view="${k}" class="${view===k?'active':''}" aria-label="${k==='library'?'Library':v}" data-tooltip="${k==='library'?'Library':v}" ${view===k?'aria-current="page"':''}>${icon(k)}<span aria-hidden="true">${k==='library'?'Library':v}</span></button>`).join('');connection();({studio:renderStudio,library:renderLibrary,twin:renderTwins,queue:renderQueue,spending:renderSpending,settings:renderSettings})[view]();updateGlobalQueue();}
-async function navigate(next){await save();view=next;render();}
+function connection(){const providers=[state.settings.openrouterConfigured&&'OpenRouter',state.settings.voicestudioConfigured&&'VoiceStudio'].filter(Boolean),button=$('#connection');button.classList.toggle('online',providers.length>0);button.innerHTML=`<span class="dot"></span>${providers.length?providers.length+' provider'+(providers.length===1?'':'s'):'Connections'}`;button.title=providers.length?providers.join(' · '):'Set up providers and models';button.setAttribute('aria-label','Manage connections');}
+function render(){
+ if(view==='studio'&&!current())view='library';
+ content.querySelectorAll('.gallery-page audio').forEach(a=>a.pause());queueWorkspace?.dispose();queueWorkspace=null;dubbingWorkspace?.dispose();dubbingWorkspace=null;disposeInspector?.();disposeInspector=null;disposeTimeline?.();disposeTimeline=null;
+ document.body.classList.toggle('timeline-studio',view==='studio');document.body.classList.toggle('settings-view',view==='settings');document.body.classList.toggle('detail-view',view!=='studio');document.body.classList.toggle('queue-view',view==='queue');closeModelPicker();
+ const names={library:'Library',twin:'My Models',queue:'Queue',spending:'Spending',settings:'Settings'},active=view==='studio'?'library':view;
+ $('#page-title').textContent=names[view]||current()?.title||'Library';
+ $('#nav').innerHTML=Object.entries(names).map(([key,label])=>`<button data-view="${key}" class="${active===key?'active':''}" aria-label="${label}" data-tooltip="${label}" ${active===key?`aria-current="${view==='studio'?'location':'page'}"`:''}>${icon(key)}<span aria-hidden="true">${label}</span></button>`).join('');
+ const back=$('#return-to-project');back.hidden=!returnToProject||!current()||view==='studio'||view==='library';back.textContent='← '+(current()?.title||'Project');back.setAttribute('aria-label','Back to '+(current()?.title||'project'));
+ connection();({studio:renderStudio,library:renderLibrary,twin:renderTwins,queue:renderQueue,spending:renderSpending,settings:renderSettings})[view]();updateGlobalQueue();
+}
+async function navigate(next){await save();if(view==='studio'&&next!=='studio')audioSession().pause?.();if(next==='library')returnToProject=false;else if(view==='studio'&&next!=='studio')returnToProject=true;view=next;render();}
 function edit(){dirty=true;draftVersion++;const el=$('#save-state');if(el)el.textContent='Saving…';clearTimeout(saveTimer);saveTimer=setTimeout(()=>save().catch(e=>toast(e.message)),650);}
 async function save(){clearTimeout(saveTimer);if(!dirty||!current())return saveChain;const p=structuredClone(current()),v=draftVersion;saveChain=saveChain.catch(()=>{}).then(async()=>{await api('/projects/'+p.id,'PUT',p);if(v===draftVersion){dirty=false;if($('#save-state'))$('#save-state').textContent='Saved';}}).catch(e=>{if($('#save-state'))$('#save-state').textContent='Save failed · retry';throw e;});return saveChain;}
 function options(items,selected){return items.map(([id,name])=>`<option value="${escape(id)}" ${id===selected?'selected':''}>${escape(name)}</option>`).join('');}
-function showDialog(html){$('#dialog-content').innerHTML=html;$('#dialog').showModal();}
+function showDialog(html,labelledBy){
+ const dialog=$('#dialog');
+ if(labelledBy)dialog.setAttribute('aria-labelledby',labelledBy);
+ else dialog.removeAttribute('aria-labelledby');
+ $('#dialog-content').innerHTML=html;dialog.showModal();
+}
 function closeDialog(){twinCleanup?.();twinCleanup=null;$('#dialog').close();}
 $('#dialog').addEventListener('close',()=>{twinCleanup?.();twinCleanup=null;});
+$('#dialog').addEventListener('cancel',e=>{if($('#new-project[aria-busy="true"]'))e.preventDefault();});
 async function openProject(){
- await save();await refresh();
- showDialog(`<div class="dialog-head"><h2>Open project</h2><button data-close aria-label="Close">✕</button></div><p class="note">Projects saved on this Mac.</p><input id="project-search" type="search" aria-label="Search projects" placeholder="Search projects…"><div id="project-picker-list" class="project-picker-list"></div><div class="dialog-actions"><button data-close>Cancel</button><button id="project-picker-new">New project…</button></div>`);
- const draw=()=>{const query=$('#project-search').value.toLocaleLowerCase().trim(),projects=state.projects.filter(p=>p.title.toLocaleLowerCase().includes(query)).sort((a,b)=>new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));$('#project-picker-list').innerHTML=projects.length?projects.map(p=>`<button type="button" data-open-id="${escape(p.id)}"><strong>${escape(p.title)}</strong><span>${p.projectType==='dubbing'?'Video Dubbing':isPodcast(p)?'Podcast':'Story telling'} · ${p.sections.length} clip${p.sections.length===1?'':'s'}</span></button>`).join(''):'<p class="note">No projects found.</p>';for(const button of $('#project-picker-list').querySelectorAll('[data-open-id]'))button.onclick=()=>action(async()=>{await save();projectId=button.dataset.openId;sectionId=null;clipTab='script';localStorage.setItem('mytwin-project',projectId);view='studio';closeDialog();render();});};
- $('#project-search').oninput=draw;$('#project-picker-new').onclick=()=>{closeDialog();newProject();};draw();$('#project-search').focus();
+ await save();await refresh();await navigate('library');content.querySelector('[aria-label="Search projects"]')?.focus();
 }
 function mountInspector(){
  const workspace=$('.clip-workspace'),sidebar=$('.clip-sidebar'),toggle=$('#toggle-inspector');if(!workspace||!sidebar||!toggle)return;
@@ -80,17 +102,82 @@ async function renameProject(){
 }
 async function nativeMenuAction(command){
  if(!state)return;
- if(command==='sidebar'){if(view!=='studio')await navigate('studio');$('#toggle-inspector')?.click();return;}
+ if(command==='sidebar'){if(view!=='studio'){toast('Open a project to show its clip sidebar.');return;}$('#toggle-inspector')?.click();return;}
  if($('#dialog').open){toast('Finish or close the current dialog first.');return;}
- if(command==='rename')await renameProject();
+ if(command==='rename'){if(view!=='studio'){toast('Open a project to rename it.');return;}await renameProject();}
  else if(command==='new')await newProject();
  else if(command==='open')await openProject();
  else if(command==='save'){await save();toast('Project saved.');}
 }
 async function newProject(){
  await save();
- showDialog(`<div class="dialog-head"><h2>What kind of project?</h2><button data-close aria-label="Close">✕</button></div><form id="new-project"><fieldset class="project-types"><legend>Choose your format</legend><label class="project-type"><input type="radio" name="projectType" value="storytelling" required><span>${icon('video')}<strong>Story Telling</strong><small>A story brought to life with your twin, voice and scenes.</small></span></label><label class="project-type"><input type="radio" name="projectType" value="podcast" required><span>${icon('twin')}<strong>Podcast</strong><small>A conversation with a host and guests, each with their own voice.</small></span></label><label class="project-type"><input type="radio" name="projectType" value="dubbing" required><span>${icon('video')}<strong>Video Dubbing</strong><small>Upload or generate a video, then dub it with your twin’s voice.</small></span></label></fieldset><label>Project name<input name="title" required placeholder="Give your project a name" maxlength="200"></label><div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary" id="create-project">Create project</button></div></form>`);
- $('#new-project').onsubmit=e=>{e.preventDefault();action(async()=>{const button=$('#create-project');button.disabled=true;try{const f=new FormData(e.target),p=await api('/projects','POST',{title:f.get('title'),projectType:f.get('projectType')});await refresh();projectId=p.id;sectionId=p.sections[0].id;localStorage.setItem('mytwin-project',p.id);view='studio';clipTab='script';closeDialog();render();if(isPodcast(p))editPodcast();}finally{button.disabled=false;}});};
+ const formats=[
+  ['storytelling','story','Storytelling','Build a story with narration and video scenes.'],
+  ['podcast','mic','Podcast','Create a conversation with a host and guests.'],
+  ['audiobook','book','Audiobook','Turn written chapters into narrated audio.'],
+  ['dubbing','video','Video dubbing','Replace a video’s audio with your twin’s voice.']
+ ];
+ showDialog(`
+  <form id="new-project">
+   <header class="new-project-header">
+    <h2 id="new-project-title" tabindex="-1" autofocus>New project</h2>
+    <button type="button" class="new-project-close" data-close aria-label="Close">✕</button>
+   </header>
+   <div class="new-project-body">
+    <fieldset class="project-types">
+     <legend>Project format</legend>
+     <div class="project-format-list">
+      ${formats.map(([type,glyph,label,description])=>`
+       <label class="project-type">
+        <span class="project-format-icon">${icon(glyph)}</span>
+        <span class="project-format-copy">
+         <strong id="format-${type}">${label}</strong>
+         <small id="format-${type}-description">${description}</small>
+        </span>
+        <input type="radio" name="projectType" value="${type}" required
+         aria-labelledby="format-${type}" aria-describedby="format-${type}-description">
+       </label>`).join('')}
+     </div>
+    </fieldset>
+    <label class="new-project-name">Project name
+     <input name="title" required maxlength="200">
+    </label>
+   </div>
+   <footer class="new-project-footer">
+    <p class="error" id="new-project-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+     <button type="button" data-close>Cancel</button>
+     <button type="submit" class="primary" id="create-project" disabled>Create project</button>
+    </div>
+   </footer>
+  </form>`,'new-project-title');
+ const form=$('#new-project'),button=$('#create-project'),error=$('#new-project-error');
+ const title=form.elements.namedItem('title'),format=form.elements.namedItem('projectType');
+ const updateButton=()=>{button.disabled=form.getAttribute('aria-busy')==='true'||!title.value.trim()||!format.value;};
+ const setCreating=creating=>{
+  form.setAttribute('aria-busy',String(creating));
+  form.querySelector('.new-project-body').inert=creating;
+  form.querySelectorAll('[data-close]').forEach(dismiss=>dismiss.disabled=creating);
+  button.textContent=creating?'Creating…':'Create project';
+  updateButton();
+ };
+ form.oninput=updateButton;
+ form.onsubmit=async e=>{
+  e.preventDefault();
+  if(button.disabled)return;
+  setCreating(true);error.hidden=true;
+  try{
+   const p=await api('/projects','POST',{title:title.value.trim(),projectType:format.value});
+   await refresh();
+   projectId=p.id;sectionId=p.sections[0].id;localStorage.setItem('mytwin-project',p.id);
+   view='studio';clipTab='script';closeDialog();render();
+   if(isPodcast(p))editPodcast();
+  }catch(e){
+   error.hidden=false;error.textContent=e.message||String(e);
+  }finally{
+   setCreating(false);
+  }
+ };
 }
 function editPodcast(draft){
  const p=current(),podcast=structuredClone(draft?.speakers?draft:p.podcast||defaultPodcast());let image=state.assets.find(a=>a.id===podcast.sceneImageId);
@@ -120,7 +207,6 @@ function importPodcastScript(){
 }
 function setupPodcastStudio(p,sec){
  const podcast=p.podcast,speaker=speakerFor(p,sec);
- $('.clip-project').insertAdjacentHTML('beforeend',`<span class="project-type-badge">${p.projectType==='dubbing'?'Video Dubbing':isPodcast(p)?'Podcast · Audio':'Story Telling'}</span>`);
  if(!isPodcast(p))return;
  $('.clip-project').insertAdjacentHTML('afterend',`<div class="podcast-toolbar"><div class="podcast-characters">${podcast.speakers.map((s,i)=>`<span class="podcast-character"><b>${i+1}</b>${escape(s.name)}<small>${escape(state.profiles.find(profile=>profile.id===(p.tracks?.find(t=>t.speakerId===s.id)?.profileId||s.profileId))?.name||'Choose a model')}</small></span>`).join('')}</div><div class="podcast-actions"><div class="podcast-setup-actions" role="group" aria-label="Episode setup"><button id="podcast-setup-button">Speakers & voices</button><button id="podcast-import-button">Import script</button></div></div></div>`);
  $('#podcast-setup-button').onclick=editPodcast;$('#podcast-import-button').onclick=importPodcastScript;
@@ -130,22 +216,18 @@ function setupPodcastStudio(p,sec){
  $('#script').placeholder=`What does ${speaker?.name||'this character'} say?`;
  $('[data-add-section]').textContent='+ Turn';
  $('#profile-select').setAttribute('aria-label','Speaking character model');
- $('#scene-prompt').previousElementSibling.textContent='Shot direction';
- $('#scene-prompt').placeholder='Optional camera direction for this turn…';
- $('#choose-scene-image').insertAdjacentHTML('beforebegin','<p class="note">Uses the shared studio image. Choose another image to override this turn.</p>');
- if(sec.sceneImageId){$('#choose-scene-image').insertAdjacentHTML('afterend','<button id="use-podcast-studio">Use shared studio image</button>');$('#use-podcast-studio').onclick=()=>{delete sec.sceneImageId;edit();render();};}
 }
 
 function podcastVoiceChoices(profileId,selected){
  const twin=state.profiles.find(p=>p.id===profileId),provider=twin?.voiceProvider||state.settings.voiceProvider;
  const engine=twin?.localEngine||state.settings.localEngine||'qwen3';
- const voices=provider==='local'?localVoiceChoices(localStatus?.models,engine,current()?.language):(modelsFor('speech').find(m=>m.id===(twin?.speechModel||state.settings.speechModel))?.voices||[]).map(v=>[v,v]);
+ const voices=provider==='local'?localVoiceChoices(localStatus?.models,engine,current()?.language):(modelsFor('speech',provider).find(m=>m.id===twinVoiceSetting('speechModel',''))?.voices||[]).map(v=>[v,v]);
  return [['','Use twin voice settings'],...voices,...(selected&&!voices.some(v=>v[0]===selected)?[[selected,selected+' · saved voice']]:[])];
 }
 function mountPodcastAudio(p){
  const audio=podcastAudioOnly();$('.clip-studio').classList.toggle('podcast-audio',audio);
  if(audio&&clipTab==='video'){$('#clip-tab-audio').click();}
- $('.clip-project .project-type-badge').insertAdjacentHTML('afterend',`<div class="podcast-workspace-switch" role="group" aria-label="Workspace"><button type="button" data-podcast-workspace="audio" aria-pressed="${audio}">${icon('wave')}Audio</button><button type="button" data-podcast-workspace="video" aria-pressed="${!audio}">${icon('video')}Video</button></div>`);
+ $('#project-select').insertAdjacentHTML('afterend',`<div class="podcast-workspace-switch" role="group" aria-label="Workspace"><button type="button" data-podcast-workspace="audio" aria-pressed="${audio}">${icon('wave')}Audio</button><button type="button" data-podcast-workspace="video" aria-pressed="${!audio}">${icon('video')}Video</button></div>`);
  $('.podcast-actions').insertAdjacentHTML('beforeend',`<label class="podcast-pacing">Timing<select id="podcast-pacing" aria-label="Conversation timing">${options(Object.entries(podcastPacing).map(([id,s])=>[id,s.name]),p.podcast.pacing||'natural')}</select></label><div class="podcast-generation-actions" role="group" aria-label="Voice generation"><button id="podcast-generate" class="primary" title="Generate audio for turns without a current voice take">Generate voices</button><button id="podcast-stop" hidden>Stop after current turn</button></div>`);
  $('#podcast-pacing').onchange=e=>{audioSession().pause?.();p.podcast.pacing=e.target.value;edit();render();};
  for(const button of document.querySelectorAll('[data-podcast-workspace]'))button.onclick=()=>{if((button.dataset.podcastWorkspace==='audio')===audio)return;audioSession().pause?.();if(button.dataset.podcastWorkspace==='video')podcastVideoViews.add(p.id);else podcastVideoViews.delete(p.id);render();};
@@ -171,7 +253,9 @@ function editAudioTrack(id){
  const p=current(),track=p.tracks?.find(t=>t.id===id);if(!track)return;
  const clips=p.sections.filter(s=>voiceTrackFor(p,s)?.id===id),scripted=clips.filter(s=>!s.audioAssetId&&s.text.trim()),kept=clips.length-scripted.length,run=podcastRuns.get(p.id);
  showDialog(`<div class="dialog-head"><h2>${escape(track.name)} track</h2><button data-close aria-label="Close">✕</button></div><label>Track name<input id="audio-track-name" maxlength="100" value="${escape(track.name)}"></label><label>Twin<select id="audio-track-twin" ${run?.active?'disabled':''}>${options([['','Use existing clip voices'],...state.profiles.map(t=>[t.id,t.name])],track.profileId||'')}</select></label><p class="note">${scripted.length} scripted clip${scripted.length===1?'':'s'}${kept?' · '+kept+' audio-only or empty clip'+(kept===1?'':'s')+' kept':''}. The selected twin applies to every scripted clip on this track.</p><p class="note">Current takes are reused when their voice settings match. Previous takes stay in clip history.</p><div id="audio-track-progress" class="note" role="status">${escape(run?.active?run.message:'')}</div><div class="dialog-actions"><button data-close>Cancel</button>${run?.active?'<button id="stop-track-audio">Stop after current clip</button>':''}<button id="save-audio-track" ${run?.active?'disabled':''}>Save</button><button id="generate-track-audio" class="primary" ${!scripted.length||run?.active?'disabled':''}>Generate track audio</button></div>`);
- const apply=async generate=>{const profileId=$('#audio-track-twin').value,name=$('#audio-track-name').value.trim()||track.name;if(profileId!==(track.profileId||'')||name!==track.name){checkpointTimeline();track.name=name;if(profileId)track.profileId=profileId;else delete track.profileId;edit();}await save();closeDialog();renderKeepingTimelineViewport();if(generate)await generatePodcastAudio(p,id);};
+ const apply=async generate=>{const profileId=$('#audio-track-twin').value,name=$('#audio-track-name').value.trim()||track.name;if(isAudiobook(p)&&track.kind!=='music'&&track.id!=='music'&&
+  (/[:：]/.test(name)||audiobookCharacters(p).some(t=>t.id!==id&&t.name.toLowerCase()===name.toLowerCase())))throw Error('Use a distinct character name without a colon.');
+ if(profileId!==(track.profileId||'')||name!==track.name){checkpointTimeline();track.name=name;if(profileId)track.profileId=profileId;else delete track.profileId;edit();}await save();closeDialog();renderKeepingTimelineViewport();if(generate)await generatePodcastAudio(p,id);};
  $('#save-audio-track').onclick=()=>action(()=>apply(false));$('#generate-track-audio').onclick=()=>action(()=>apply(true));
  if($('#stop-track-audio'))$('#stop-track-audio').onclick=()=>{run.stop=true;run.message='Stopping after the current clip.';$('#stop-track-audio').disabled=true;updateTrackAudioStatus();};
 }
@@ -181,64 +265,68 @@ function updateTrackAudioStatus(){
  for(const el of document.querySelectorAll('.track-batch-status'))el.textContent=trackAudioLabel(el.dataset.trackId);
  if($('#audio-track-progress')&&run)$('#audio-track-progress').textContent=run.message;
 }
-async function generatePodcastAudio(p,trackId){
+async function generatePodcastAudio(p,trackId,chapterId){
  if(podcastRuns.get(p.id)?.active)return;
-await save();const track=trackId&&p.tracks.find(t=>t.id===trackId),plan=trackId?planTrackAudio(state,p,trackId):planPodcastAudio(state,p),needed=plan.filter(e=>e.job?.status!=='completed');
-if(!needed.length){toast(track?'Every scripted clip on this track has a current voice take.':'Every dialogue turn already has a current voice take.');return;}
+await save();
+ const track=trackId&&p.tracks.find(t=>t.id===trackId),chapter=chapterId&&audiobookChapters(p).find(ch=>ch.id===chapterId);
+ if(chapterId&&!chapter)throw Error('Choose a chapter.');
+ const plan=chapter?planVoiceSections(state,p,chapter.blocks):track?planTrackAudio(state,p,trackId):planPodcastAudio(state,p);
+ const needed=plan.filter(e=>e.job?.status!=='completed'),name=chapter?.title||track?.name;
+if(!needed.length){toast(name?'Every scripted block has a current voice take.':'Every dialogue turn already has a current voice take.');return;}
  if(needed.some(e=>e.request.provider==='local')){await loadLocalStatus();for(const e of needed.filter(e=>e.request.provider==='local')){const model=localStatus.models?.[e.request.engine];if(!localStatus.supported||!model?.ready||!model.languages[p.language])throw Error(`Download a compatible ${e.request.engine} model in Settings before generating.`);}}
-showDialog(`<div class="dialog-head"><h2>${track?'Generate '+escape(track.name)+' audio':'Generate podcast audio'}</h2><button data-close aria-label="Close">✕</button></div><p>${needed.length} clips need audio. ${plan.length-needed.length} current takes will be reused.</p><p class="note">Clips generate one at a time. Cloud providers use credits. Previous takes are kept.</p><ol class="podcast-generation-plan">${needed.map(e=>`<li>${escape(e.speaker||track?.name||'Voice')} · ${escape(e.title)}<small>${escape(e.request.provider)} · ${escape(e.request.engine)}${e.request.voiceMode==='preset'?' · '+escape(e.request.voice):' · Voice clone'}</small></li>`).join('')}</ol><div class="dialog-actions"><button data-close>Cancel</button><button id="start-podcast-audio" class="primary">Generate ${needed.length} clips</button></div>`);
+showDialog(`<div class="dialog-head"><h2>${name?'Generate '+escape(name)+' audio':'Generate podcast audio'}</h2><button data-close aria-label="Close">✕</button></div><p>${needed.length} clips need audio. ${plan.length-needed.length} current takes will be reused.</p><p class="note">Clips generate one at a time. Cloud providers use credits. Previous takes are kept.</p><ol class="podcast-generation-plan">${needed.map(e=>`<li>${escape(e.speaker||track?.name||'Voice')} · ${escape(e.title)}<small>${escape(e.request.provider)} · ${escape(e.request.engine)}${e.request.voiceMode==='preset'?' · '+escape(e.request.voice):' · Voice clone'}</small></li>`).join('')}</ol><div class="dialog-actions"><button data-close>Cancel</button><button id="start-podcast-audio" class="primary">Generate ${needed.length} clips</button></div>`);
  $('#start-podcast-audio').onclick=()=>action(async()=>{
-if(podcastRuns.get(p.id)?.active)return;const run={active:true,stop:false,trackId,message:track?'Starting '+track.name+' audio…':'Starting episode audio…'};podcastRuns.set(p.id,run);closeDialog();updatePodcastAudio();updateTrackAudioStatus();
-  try{const result=await runPodcastAudio({plan,stopped:()=>run.stop,changed:entry=>{try{const live=state.projects.find(x=>x.id===p.id),sec=live?.sections.find(s=>s.id===entry.sectionId);return !sec||(trackId&&voiceTrackFor(live,sec)?.id!==trackId)||voiceIdentity(voiceSnapshot(state,live,sec))!==voiceIdentity(entry.snapshot);}catch{return true;}},prepare:request=>api('/jobs','POST',request),submit:id=>api('/jobs/'+id+'/submit','POST'),poll:async id=>{await refresh();const job=state.jobs.find(j=>j.id===id);if(!job)throw Error('The voice job could not be found.');return job;},onProgress:async progress=>{await selectClipVoiceTake(p,progress.job);run.progress=`${progress.completed} / ${progress.total} ready`;run.message=`${run.progress} · ${progress.entry.speaker||track?.name||'Voice'} · ${progress.entry.title}`;if(current()?.id===p.id){renderTakes();}}});run.message=result.stopped?'Stopped. The current take continues. Generate again to resume.':track?track.name+' audio is ready.':'Episode voices are ready. Play the timeline or export audio.';if(track&&!result.stopped)toast(run.message);}
+if(podcastRuns.get(p.id)?.active)return;const run={active:true,stop:false,trackId,chapterId,message:name?'Starting '+name+' audio…':'Starting episode audio…'};podcastRuns.set(p.id,run);closeDialog();updatePodcastAudio();updateAudiobookChapters();updateTrackAudioStatus();
+  try{const result=await runPodcastAudio({plan,stopped:()=>run.stop,changed:entry=>{try{const live=state.projects.find(x=>x.id===p.id),sec=live?.sections.find(s=>s.id===entry.sectionId);return !sec||(chapterId&&audiobookChapterId(sec)!==chapterId)||(trackId&&voiceTrackFor(live,sec)?.id!==trackId)||voiceIdentity(voiceSnapshot(state,live,sec))!==voiceIdentity(entry.snapshot);}catch{return true;}},prepare:request=>api('/jobs','POST',request),submit:id=>api('/jobs/'+id+'/submit','POST'),poll:async id=>{await refresh();const job=state.jobs.find(j=>j.id===id);if(!job)throw Error('The voice job could not be found.');return job;},onProgress:async progress=>{await selectClipVoiceTake(p,progress.job);run.progress=`${progress.completed} / ${progress.total} ready`;run.message=`${run.progress} · ${progress.entry.speaker||track?.name||'Voice'} · ${progress.entry.title}`;if(current()?.id===p.id){renderTakes();}}});run.message=result.stopped?'Stopped. The current take continues. Generate again to resume.':name?name+' audio is ready.':'Episode voices are ready. Play the timeline or export audio.';if(name&&!result.stopped)toast(run.message);}
   catch(e){run.error=true;run.message=e.message;toast(e.message);}finally{run.active=false;await refresh();if(current()?.id===p.id)renderTakes();}
  });
 }
 
-function modelsFor(use){if(use==='scene')return (state.settings.videoModels||[]).filter(m=>m.supported_durations?.length&&m.supported_frame_images?.includes('first_frame'));if(use==='video')return (state.settings.videoModels||[]).filter(m=>m.supported_durations?.length);return (state.settings.catalog?.models||[]).filter(m=>{
+function modelsFor(use,provider=''){if(use==='video'||use==='scene')return videoProviderModels(state.settings,provider||currentVideoProvider(state.settings)).filter(m=>m.supported_durations?.length&&(use!=='scene'||m.supported_frame_images?.includes('first_frame')));if(provider.startsWith('api:'))return apiProviderModels(state.settings,provider).filter(m=>m.kind===({speech:'speech',writing:'chat',listening:'transcription'}[use]));if(use==='scene')return (state.settings.videoModels||[]).filter(m=>m.supported_durations?.length&&m.supported_frame_images?.includes('first_frame'));if(use==='video')return (state.settings.videoModels||[]).filter(m=>m.supported_durations?.length);return (state.settings.catalog?.models||[]).filter(m=>{
  const i=m.inputs||[],o=m.outputs||[],e=m.endpoints||[];
  return use==='speech'?o.includes('speech')&&e.includes('/api/v1/audio/speech'):i.includes(use==='listening'?'audio':'text')&&o.includes('text')&&(use!=='writing'||o.every(x=>x==='text'))&&e.includes('/api/v1/chat/completions');
 });}
-function modelPicker(use,selected,id,name,label){return `<div class="model-picker" data-use="${use}"><span class="field-label">${label}</span><input type="hidden" id="${id}" name="${name}" value="${escape(selected||'')}"><button type="button" class="model-trigger" aria-label="${label}" aria-haspopup="listbox" aria-expanded="false"><span class="model-selection"></span><span aria-hidden="true">⌄</span></button><div class="model-menu" hidden><input class="model-search" type="search" role="combobox" aria-label="Search ${label.toLowerCase()}" aria-autocomplete="list" aria-expanded="true" aria-controls="${id}-options" placeholder="Search models…" autocomplete="off"><div class="model-results" role="listbox" id="${id}-options" aria-label="${label}"></div><div class="model-price-note">USD · Listed rates may vary by provider</div></div></div>`;}
+function modelPicker(use,selected,id,name,label,provider=''){return `<div class="model-picker" data-use="${use}" data-model-provider="${escape(provider)}"><span class="field-label">${label}</span><input type="hidden" id="${id}" name="${name}" value="${escape(selected||'')}"><button type="button" class="model-trigger" aria-label="${label}" aria-haspopup="listbox" aria-expanded="false"><span class="model-selection"></span><span aria-hidden="true">⌄</span></button><div class="model-menu" hidden><input class="model-search" type="search" role="combobox" aria-label="Search ${label.toLowerCase()}" aria-autocomplete="list" aria-expanded="true" aria-controls="${id}-options" placeholder="Search models…" autocomplete="off"><div class="model-results" role="listbox" id="${id}-options" aria-label="${label}"></div><div class="model-price-note">USD · Listed rates may vary by provider</div></div></div>`;}
 let activePicker=null;
 function closeModelPicker(focus=false){if(!activePicker)return;const p=activePicker;activePicker=null;p.querySelector('.model-menu').hidden=true;p.querySelector('.model-trigger').setAttribute('aria-expanded','false');if(focus)p.querySelector('.model-trigger').focus();}
-function updateModelPicker(p){const use=p.dataset.use,value=p.querySelector('input[type="hidden"]').value,m=modelsFor(use).find(m=>m.id===value);p.querySelector('.model-selection').innerHTML=`<strong>${escape(m?.name||value||'Choose a model')}</strong>${value?`<small>${escape(modelPrice(m,use))}</small>`:''}`;}
+function updateModelPicker(p){const use=p.dataset.use,value=p.querySelector('input[type="hidden"]').value,m=modelsFor(use,p.dataset.modelProvider).find(m=>m.id===value);p.querySelector('.model-selection').innerHTML=`<strong>${escape(m?.name||value||'Choose a model')}</strong>${value?`<small>${escape(modelPrice(m,use))}</small>`:''}`;}
 function initModelPickers(){document.querySelectorAll('.model-picker').forEach(p=>{updateModelPicker(p);if(p.dataset.ready)return;p.dataset.ready='true';const trigger=p.querySelector('.model-trigger'),search=p.querySelector('.model-search'),list=p.querySelector('.model-results'),input=p.querySelector('input[type="hidden"]');let matches=[],index=-1;
  const highlight=()=>{list.querySelectorAll('[role="option"]').forEach((el,i)=>el.classList.toggle('highlighted',i===index));const el=list.children[index];if(el?.getAttribute('role')==='option'){search.setAttribute('aria-activedescendant',el.id);const row=el.getBoundingClientRect(),box=list.getBoundingClientRect();if(row.top<box.top)list.scrollTop-=box.top-row.top;else if(row.bottom>box.bottom)list.scrollTop+=row.bottom-box.bottom;}else search.removeAttribute('aria-activedescendant');};
- const draw=()=>{list.scrollTop=0;const q=search.value.trim().toLowerCase();matches=modelsFor(p.dataset.use).filter(m=>(m.name+' '+m.id).toLowerCase().includes(q));index=matches.findIndex(m=>m.id===input.value);list.innerHTML=matches.length?matches.map((m,i)=>`<div class="model-option" role="option" id="${input.id}-option-${i}" aria-selected="${m.id===input.value}" data-index="${i}"><span><strong>${escape(m.name)}</strong><small>${escape(modelPrice(m,p.dataset.use))}</small></span><span class="model-check">${m.id===input.value?'✓':''}</span></div>`).join(''):'<div class="model-empty">No models found</div>';highlight();};
+ const draw=()=>{list.scrollTop=0;const q=search.value.trim().toLowerCase();matches=modelsFor(p.dataset.use,p.dataset.modelProvider).filter(m=>(m.name+' '+m.id).toLowerCase().includes(q));index=matches.findIndex(m=>m.id===input.value);list.innerHTML=matches.length?matches.map((m,i)=>`<div class="model-option" role="option" id="${input.id}-option-${i}" aria-selected="${m.id===input.value}" data-index="${i}"><span><strong>${escape(m.name)}</strong><small>${escape(modelPrice(m,p.dataset.use))}</small></span><span class="model-check">${m.id===input.value?'✓':''}</span></div>`).join(''):'<div class="model-empty">No models found</div>';highlight();};
  const choose=i=>{if(!matches[i])return;input.value=matches[i].id;updateModelPicker(p);closeModelPicker(true);input.dispatchEvent(new Event('change',{bubbles:true}));};
  const open=()=>{closeModelPicker();activePicker=p;p.querySelector('.model-menu').hidden=false;trigger.setAttribute('aria-expanded','true');search.value='';p.classList.remove('opens-up');draw();const rect=trigger.getBoundingClientRect(),height=p.querySelector('.model-menu').offsetHeight;if(window.innerHeight-rect.bottom<height&&rect.top>window.innerHeight-rect.bottom)p.classList.add('opens-up');search.focus({preventScroll:true});};
  trigger.onclick=()=>activePicker===p?closeModelPicker():open();trigger.onkeydown=e=>{if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();open();}};
  search.oninput=draw;search.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();closeModelPicker(true);}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();index=Math.max(0,Math.min(matches.length-1,index+(e.key==='ArrowDown'?1:-1)));highlight();}else if(e.key==='Enter'){e.preventDefault();choose(index<0?0:index);}else if(e.key==='Tab')closeModelPicker();};
  list.onclick=e=>{const row=e.target.closest('[data-index]');if(row)choose(Number(row.dataset.index));};
  });}
-document.addEventListener('pointerdown',e=>{if(activePicker&&!activePicker.contains(e.target))closeModelPicker();for(const menu of document.querySelectorAll('.project-menu[open]'))if(!menu.contains(e.target))menu.open=false;});
+document.addEventListener('pointerdown',e=>{if(activePicker&&!activePicker.contains(e.target))closeModelPicker();});
 async function loadModels(){if(catalogBusy)return;catalogBusy=true;try{const c=await api('/openrouter/models');state.settings.catalog=c;closeModelPicker();initModelPickers();if($('#catalog-status'))$('#catalog-status').textContent=`${c.models.length} models`;toast('Models updated.');}finally{catalogBusy=false;}}
 async function loadSpeechDetails(model){if(!model)return;const v=await api('/openrouter/details','POST',{model});speechDetails[model]=v;return v;}
 async function loadLocalStatus(){localStatus=await api('/local-tts/status');return localStatus;}
 function selectedTwin(){return state.profiles.find(p=>p.id===profileIdFor(current(),section()));}
-function twinVoiceSetting(key,fallback){return selectedTwin()?.[key]||state.settings[key]||fallback;}
-function cloudPresetVoice(){const twin=selectedTwin();return twin?.speechModel?(twin.voice||''):state.settings.voice||'';}
-function voiceSetupSummary(){const provider=twinVoiceSetting('voiceProvider','openrouter');return provider==='local'?'On this Mac · '+({'qwen3':'Qwen3 fast clone','qwen3-hq':'Qwen3 quality clone','qwen3-custom':'Qwen3 CustomVoice',kokoro:'Kokoro preset voice'}[twinVoiceSetting('localEngine','qwen3')]||'Local speech'):{openrouter:'OpenRouter',worker:'Worker',voicestudio:'VoiceStudio'}[provider]||'Choose a voice provider';}
+function twinVoiceSetting(key,fallback){const managed=apiSpeechSettings(state.settings,selectedTwin()||{});if(managed&&['speechModel','voiceMode','voice'].includes(key))return managed[key]||fallback;return selectedTwin()?.[key]||state.settings[key]||fallback;}
+function cloudPresetVoice(){const managed=apiSpeechSettings(state.settings,selectedTwin()||{});if(managed)return managed.voice;const twin=selectedTwin();return twin?.speechModel?(twin.voice||''):state.settings.voice||'';}
+function voiceSetupSummary(){const provider=twinVoiceSetting('voiceProvider','openrouter');return provider==='local'?'On this Mac · '+({'qwen3':'Qwen3 fast clone','qwen3-hq':'Qwen3 quality clone','qwen3-custom':'Qwen3 CustomVoice',kokoro:'Kokoro preset voice',omnivoice:'OmniVoice multilingual clone','omnivoice-presets':'OmniVoice ready-made voice'}[twinVoiceSetting('localEngine','qwen3')]||'Local speech'):{openrouter:'OpenRouter',worker:'Worker',voicestudio:'VoiceStudio'}[provider]||(state.settings.providers||[]).find(p=>p.id===provider)?.name||'Choose a voice provider';}
 async function saveTwinVoiceSetting(key,value){const twin=selectedTwin();if(twin){const updated=await api('/profiles/'+twin.id,'PUT',{...twin,[key]:value});Object.assign(twin,updated);}else{await api('/settings','PUT',{[key]:value});state.settings[key]=value;}}
 function localVoiceSetupIssue(){
  const engine=twinVoiceSetting('localEngine','qwen3'),model=localStatus?.models?.[engine],language=current()?.language;
  if(!localStatus?.supported)return 'Local speech requires an Apple Silicon Mac.';
+ if(model&&!model.languages[language])return 'Choose OmniVoice ready-made voices or voice cloning in Local model for this language.';
  if(!model?.ready)return 'Download this model in Settings → Connections → Audio.';
- if(!model.languages[language])return 'Choose a language supported by this voice model.';
  const voice=presetVoiceFor(current(),section())||twinVoiceSetting('localVoice',defaultLocalVoice(engine));
  if(isLocalPreset(engine)&&(!model.voices[voice]||engine==='kokoro'&&model.voiceLanguages[voice]!==language))return 'Choose a preset voice matching the project language in Options.';
  if(!isLocalPreset(engine)&&(!selectedTwin()?.voiceAssetId||!selectedTwin()?.voiceTranscript?.trim()))return 'Add a voice reference and its transcript in Edit model.';
  return '';
 }
 function renderLocalControls(){const host=$('#local-speech-controls');if(!host)return;const s=state.settings,engine=twinVoiceSetting('localEngine','qwen3'),m=localStatus?.models?.[engine];
- host.innerHTML=`<label>Local model<select id="local-engine">${options(localEngineChoices.filter(([id])=>id!=='qwen3-design'),engine)}</select></label>${isLocalPreset(engine)?`<label>Preset voice<select id="local-voice">${options([['','Choose a voice'],...localVoiceChoices(localStatus?.models,engine,current()?.language)],presetVoiceFor(current(),section())||twinVoiceSetting('localVoice',defaultLocalVoice(engine)))}</select></label>`:'<p class="note">Uses your twin’s voice recording (3–30 seconds) and its exact transcript. Add both in Edit model.</p>'}<p class="note">${!localStatus?'Checking local models…':!localStatus.supported?'Requires an Apple Silicon Mac.':!m?.ready?'Download this model in Settings → Connections → Audio.':'Runs on this Mac. No speech API credits.'}</p>${m?`<p class="note">Languages: ${escape(Object.values(m.languages).join(', '))}</p>`:''}`;
+ host.innerHTML=`<label>Local model<select id="local-engine">${(localStatus?.models&&!m?.languages[current()?.language]?`<option value="${escape(engine)}" selected disabled>${escape(m?.name||engine)} · unavailable in this language</option>`:'')+options(localEngineChoices.filter(([id])=>!['qwen3-design','omnivoice-design'].includes(id)&&(!localStatus?.models||localStatus.models[id]?.languages[current()?.language])),engine)}</select></label>${isLocalPreset(engine)?`<label>Preset voice<select id="local-voice">${options([['','Choose a voice'],...localVoiceChoices(localStatus?.models,engine,current()?.language)],presetVoiceFor(current(),section())||twinVoiceSetting('localVoice',defaultLocalVoice(engine)))}</select></label>`:'<p class="note">Uses your twin’s voice recording (3–30 seconds) and its exact transcript. Add both in Edit model.</p>'}<p class="note">${!localStatus?'Checking local models…':!localStatus.supported?'Requires an Apple Silicon Mac.':!m?.ready?'Download this model in Settings → Connections → Audio.':'Runs on this Mac. No speech API credits.'}</p>${m?`<p class="note">Languages: ${escape(Object.values(m.languages).join(', '))}</p>`:''}`;
  host.insertAdjacentHTML('beforeend','<button type="button" id="browse-twin-voices">Preview & design voices</button>');$('#browse-twin-voices').onclick=()=>createTwin(selectedTwin());
- const controls={speed:1,sentencePause:0,volume:1,...state.settings.localSpeech};
+ const controls=localSpeechFor(selectedTwin(),state.settings);
  const specs=[['speed','Speed',.75,1.5,.05],['sentencePause','Extra sentence pause',0,2,.1],['volume','Volume',0,2,.05]];
  const format=(key,value)=>key==='speed'?`${Number(value).toFixed(2)}×`:key==='volume'?`${Math.round(value*100)}%`:value===0?'Natural':`+${Number(value).toFixed(1)} sec`;
  host.insertAdjacentHTML('beforeend',`<div class="delivery-controls">${specs.map(([key,label,min,max,step])=>`<label for="speech-${key}">${label} <output id="speech-${key}-value">${format(key,controls[key])}</output><input id="speech-${key}" type="range" min="${min}" max="${max}" step="${step}" value="${controls[key]}"></label>`).join('')}<p class="note">Applies to new takes and exported audio. Speed preserves pitch. Volume boosts are limited to prevent clipping.</p><button type="button" class="small subtle" id="reset-speech">Reset delivery</button></div>`);
- for(const [key] of specs){const input=$('#speech-'+key);input.oninput=()=>{controls[key]=Number(input.value);state.settings.localSpeech={...controls};$('#speech-'+key+'-value').textContent=format(key,controls[key]);};input.onchange=()=>action(()=>api('/settings','PUT',{localSpeech:{...controls}}));}
- $('#reset-speech').onclick=()=>action(async()=>{state.settings.localSpeech={speed:1,sentencePause:0,volume:1};await api('/settings','PUT',{localSpeech:state.settings.localSpeech});renderLocalControls();});
+ for(const [key] of specs){const input=$('#speech-'+key);input.oninput=()=>{controls[key]=Number(input.value);if(selectedTwin())selectedTwin().localSpeech={...controls};else state.settings.localSpeech={...controls};$('#speech-'+key+'-value').textContent=format(key,controls[key]);};input.onchange=()=>action(()=>saveTwinVoiceSetting('localSpeech',{...controls}));}
+ $('#reset-speech').onclick=()=>action(async()=>{await saveTwinVoiceSetting('localSpeech',{speed:1,sentencePause:0,volume:1});renderLocalControls();});
  $('#local-engine').onchange=e=>action(async()=>{const engine=e.target.value,voice=localVoiceChoices(localStatus?.models,engine,current()?.language)[0]?.[0]||defaultLocalVoice(engine),twin=selectedTwin();const values={localEngine:engine,localVoice:voice,localVoiceLanguage:current()?.language||'en',localVoiceInstruction:'',voiceDesign:null,voicePreviewJobId:''};if(twin){Object.assign(twin,await api('/profiles/'+twin.id,'PUT',{...twin,...values}));}else{await api('/settings','PUT',values);Object.assign(state.settings,values);}if(isPodcast(current())&&!voiceTrackFor(current(),section())?.profileId){speakerFor(current(),section()).voice='';edit();}renderLocalControls();renderClipStatus();});
  if($('#local-voice'))$('#local-voice').onchange=e=>action(async()=>{if(isPodcast(current())&&!voiceTrackFor(current(),section())?.profileId){speakerFor(current(),section()).voice=e.target.value;edit();}else{const twin=selectedTwin();if(twin)Object.assign(twin,await api('/profiles/'+twin.id,'PUT',{...twin,localVoice:e.target.value,localVoiceLanguage:current().language,voicePreviewJobId:''}));else await saveTwinVoiceSetting('localVoice',e.target.value);}renderTakes();renderClipStatus();});
  if(!localStatus)loadLocalStatus().then(()=>{renderLocalControls();renderClipStatus();}).catch(e=>{host.textContent=e.message;});
@@ -248,10 +336,10 @@ function renderLocalSettings(){const host=$('#local-tts-settings');if(!host)retu
  renderLocalModelSettings(host,localStatus,{download:engine=>api('/local-tts/download','POST',{engine}),refresh:async()=>{await loadLocalStatus();renderLocalSettings();}});
 }
 setInterval(()=>{if(localStatus?.busy){const before=JSON.stringify(localStatus);loadLocalStatus().then(()=>{if(JSON.stringify(localStatus)!==before){renderLocalSettings();renderLocalControls();renderClipStatus();}}).catch(()=>{});}},3000);
-function renderSpeechControls(){const host=$('#speech-controls');if(!host)return;const s=state.settings,model=twinVoiceSetting('speechModel',''),m=modelsFor('speech').find(x=>x.id===model),details=speechDetails[model];
- host.innerHTML=`<div class="fields">${modelPicker('speech',model,'speech-model','speechModel','Speech model')}<label>Voice<select id="voice-mode">${options([['clone','My voice'],['preset','Preset voice']],twinVoiceSetting('voiceMode','clone'))}</select></label></div><div id="speech-voice"></div><p class="note" id="speech-note"></p>`;
- const update=()=>{const mode=$('#voice-mode').value,voices=(m?.voices||[]).filter(v=>typeof v==='string');$('#speech-voice').innerHTML=mode==='preset'?`<label>Preset voice<select id="preset-voice">${options([['','Choose a voice'],...voices.map(v=>[v,v])],presetVoiceFor(current(),section())||cloudPresetVoice())}</select></label>`:'';
- $('#speech-note').textContent=!model?'Choose a speech model.':mode==='clone'?(details?details.cloning?'Sends your script and voice sample to OpenRouter. Uses credits.':'This model cannot clone your voice. Choose a preset or another model.':'Checking voice support…'):'Sends your script to OpenRouter. Uses credits.';
+function renderSpeechControls(){const host=$('#speech-controls');if(!host)return;const s=state.settings,model=twinVoiceSetting('speechModel',''),m=modelsFor('speech',twinVoiceSetting('voiceProvider','openrouter')).find(x=>x.id===model),managed=twinVoiceSetting('voiceProvider','').startsWith('api:'),details=managed?{cloning:false}:speechDetails[model];
+ host.innerHTML=`<div class="fields">${modelPicker('speech',model,'speech-model','speechModel','Speech model',twinVoiceSetting('voiceProvider','openrouter'))}<label>Voice<select id="voice-mode">${options([...(managed?[]:[['clone','My voice']]),['preset','Preset voice']],twinVoiceSetting('voiceMode','clone'))}</select></label></div><div id="speech-voice"></div><p class="note" id="speech-note"></p>`;
+ const update=()=>{const mode=$('#voice-mode').value,voices=(m?.voices||[]).filter(v=>typeof v==='string');$('#speech-voice').innerHTML=mode==='preset'?`<label>Preset voice<select id="preset-voice">${options([['','Choose a voice'],...voices.map(v=>[v,m?.voiceLabels?.[v]||v])],presetVoiceFor(current(),section())||cloudPresetVoice())}</select></label>`:'';
+ $('#speech-note').textContent=!model?'Choose a speech model.':mode==='clone'?(details?details.cloning?'Sends your script and voice sample to OpenRouter. Uses credits.':'This model cannot clone your voice. Choose a preset or another model.':'Checking voice support…'):managed?'Sends your script to your selected provider. Uses your provider credits.':'Sends your script to OpenRouter. Uses credits.';
  if($('#preset-voice'))$('#preset-voice').onchange=e=>{if(isPodcast(current())&&!voiceTrackFor(current(),section())?.profileId){speakerFor(current(),section()).voice=e.target.value;edit();}else{action(()=>saveTwinVoiceSetting('voice',e.target.value));}renderTakes();};
  if($('#prepare'))$('#prepare').disabled=!model||(mode==='clone'&&details?.cloning!==true)||(mode==='preset'&&!$('#preset-voice')?.value);
  };
@@ -266,7 +354,7 @@ function avatarVideoControls(prefix){return `<div class="fields"><label>Aspect r
 function bindAvatarVideoControls(prefix){for(const key of ['aspect_ratio','resolution']){const el=$('#'+prefix+'-'+key);if(el)el.onchange=()=>{avatarVideoSettings[key]=el.value;};}}
 function avatarVideoOptions(){return {...avatarVideoSettings};}
 function videoOptions(){const v={};for(const k of ['duration','resolution','aspect_ratio']){const value=$('#video-'+k)?.value;if(value)v[k]=k==='duration'?Number(value):value;}return v;}
-function renderVideoControls(selected=videoSelection){
+function renderVideoControls(selected=state.settings.videoModel||videoSelection){
  videoSelection=selected;
  const host=$('#video-controls');if(!host)return;
  const m=modelsFor('video').find(m=>m.id===selected);
@@ -302,7 +390,8 @@ const audioSession=()=>{const id=current().id;if(!audioSessions.has(id))audioSes
 function addStudioSection(trackId){
  clipTab='script';const p=current();if(!p)return;if(p.sections.length>=100){toast('Use up to 100 sections.');return;}
  const speakers=p.podcast?.speakers||[],track=p.tracks?.find(t=>t.id===trackId),speaker=isPodcast(p)?speakers.find(s=>s.id===track?.speakerId)||speakers[(speakers.findIndex(s=>s.id===section()?.speakerId)+1)%speakers.length]:null;
- const sec={id:crypto.randomUUID(),title:speaker?`${speaker.name} · Turn ${p.sections.length+1}`:`Clip ${p.sections.length+1}`,text:'',...(speaker?{speakerId:speaker.id}:{}),trackId:speaker?speakerTrackId(speaker.id):trackId||audioSession().trackId||p.tracks?.[0]?.id||'voice'};
+ const sec={id:crypto.randomUUID(),title:speaker?`${speaker.name} · Turn ${p.sections.length+1}`:
+   isAudiobook(p)?`Chapter ${audiobookChapters(p).length+1}`:`Clip ${p.sections.length+1}`,text:'',...(speaker?{speakerId:speaker.id}:{}),trackId:speaker?speakerTrackId(speaker.id):trackId||(isAudiobook(p)?voiceTrackFor(p,undefined)?.id:audioSession().trackId)||p.tracks?.[0]?.id||'voice'};
  checkpointTimeline();p.sections.push(sec);sectionId=sec.id;edit();render();$('#script')?.focus();
 }
 
@@ -327,10 +416,10 @@ function arrangeStudio(){
  for(const b of shell.querySelectorAll('[data-story]')){b.onclick=()=>selectTab(b.dataset.story);b.onkeydown=e=>{const ids=['script','timeline','takes'];if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const next=ids[(ids.indexOf(studioTab)+(e.key==='ArrowRight'?1:2))%3];selectTab(next);$('#tab-'+next).focus();}};}selectTab(['script','timeline','takes'].includes(studioTab)?studioTab:'script');
  $('#import-script').onclick=()=>{showDialog(`<div class="dialog-head"><h2>Import text</h2><button data-close aria-label="Close">✕</button></div><label>Script<textarea id="import-text" placeholder="Paste your script. Separate sections with a blank line."></textarea></label><div class="dialog-actions"><button data-close>Cancel</button><button id="append-script" class="primary">Add sections</button></div>`);$('#append-script').onclick=()=>{const parts=$('#import-text').value.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);if(!parts.length)return;if(parts.length+p.sections.length>100){toast('Use up to 100 sections.');return;}for(const text of parts)p.sections.push({id:crypto.randomUUID(),title:'Section '+(p.sections.length+1),text});edit();closeDialog();render();};};
 }
-function matchesPodcastAudio(p,sec,take){if(!isPodcast(p)&&!voiceTrackFor(p,sec)?.profileId)return true;try{return voiceIdentity(voiceSnapshot(state,p,sec))===voiceIdentity(take);}catch{return matchesSpeaker(p,sec,take);}}
+function matchesPodcastAudio(p,sec,take){if(!isPodcast(p)&&!isAudiobook(p)&&!voiceTrackFor(p,sec)?.profileId)return true;try{return voiceIdentity(voiceSnapshot(state,p,sec))===voiceIdentity(take);}catch{return matchesSpeaker(p,sec,take);}}
 async function selectClipVoiceTake(project,job){
  if(!project||job.kind!=='voice')return;const p=state.projects.find(p=>p.id===project.id)||project,sec=p.sections.find(sec=>sec.id===job.sectionId);
- if(!sec||sec.text!==job.text||isPodcast(p)&&sec.speakerId!==job.speakerId||['failed','cancelled'].includes(job.status))return;
+ if(!sec||sec.text!==job.text||isPodcast(p)&&sec.speakerId!==job.speakerId||isAudiobook(p)&&profileIdFor(p,sec)!==job.profileId||['failed','cancelled'].includes(job.status))return;
  if(job.status==='completed'&&job.outputId){if(sec.voiceTakeId===job.id&&!sec.pendingVoiceTakeId)return;sec.voiceTakeId=job.id;delete sec.pendingVoiceTakeId;}
  else {if(sec.pendingVoiceTakeId===job.id)return;const previous=selectedVoiceTake(state,p,sec);if(previous)sec.voiceTakeId=previous.id;sec.pendingVoiceTakeId=job.id;}
  if(current()?.id===p.id){edit();await save();}else await api('/projects/'+p.id,'PUT',p);
@@ -364,23 +453,27 @@ function renderClipStatus(){
 
  const audio=$('#clip-audio');if(audio.dataset.output!==(take?.outputId||'')){audio.dataset.output=take?.outputId||'';audio.innerHTML=take?`<audio controls src="${assetUrl(take.outputId)}" preload="metadata"></audio>`:'';}
  $('#prepare').textContent=active?'Generating…':take?'Regenerate voice':'Generate voice';
- const provider=twinVoiceSetting('voiceProvider','openrouter'),cloud=provider==='openrouter',local=provider==='local';const model=twinVoiceSetting('speechModel','');const supported=local?(!localVoiceSetupIssue()):!cloud||!!model&&((twinVoiceSetting('voiceMode','clone'))==='clone'?speechDetails[model]?.cloning===true:!!(speakerFor(current(),sec)?.voice||cloudPresetVoice()));$('#prepare').disabled=!!active||!supported||!profileIdFor(current(),sec)||!sec.text.trim(); if(!active&&!take&&!supported){$('#clip-voice-status').textContent='Setup needed';if(feedback){feedback.dataset.state='empty';feedback.innerHTML='<strong>Finish voice setup</strong><p>'+(!profileIdFor(current(),sec)?'Choose a voice twin above.':local?escape(localVoiceSetupIssue()):'Choose a supported model in Model & voice settings.')+'</p>';}}
+ const provider=twinVoiceSetting('voiceProvider','openrouter'),cloud=provider==='openrouter'||provider.startsWith('api:'),local=provider==='local';const model=twinVoiceSetting('speechModel','');const supported=local?(!localVoiceSetupIssue()):!cloud||!!model&&((twinVoiceSetting('voiceMode','clone'))==='clone'?speechDetails[model]?.cloning===true:!!(speakerFor(current(),sec)?.voice||cloudPresetVoice()));$('#prepare').disabled=!!active||!supported||!profileIdFor(current(),sec)||!sec.text.trim(); if(!active&&!take&&!supported){$('#clip-voice-status').textContent='Setup needed';if(feedback){feedback.dataset.state='empty';feedback.innerHTML='<strong>Finish voice setup</strong><p>'+(!profileIdFor(current(),sec)?'Choose a voice twin above.':local?escape(localVoiceSetupIssue()):'Choose a supported model in Model & voice settings.')+'</p>';}}
  const videoJobs=state.jobs.filter(j=>j.projectId===projectId),v=linkedVideo({sec,take},videoJobs);
  const pending=activeVideoJob(videoJobs,sec.id,take?.id),busy=videoJobBusy(pending),button=$('#clip-video');button.disabled=!take||busy;button.textContent=busy?videoJobLabel(pending):pending?'View saved job':v?'Regenerate video':'Generate video';button.classList.toggle('is-rendering',busy);button.setAttribute('aria-busy',String(busy));
  $('#clip-video-status').textContent=pending?videoJobLabel(pending):v?'Ready':'';$('#clip-video-status').setAttribute('role','status');
 }
 function setupClipTabs(){
- const sidebar=$('.clip-sidebar'),name=$('#section-title'),script=$('#script'),count=$('#word-count');
+ const sidebar=$('.clip-sidebar'),name=$('#section-title'),script=$('#script'),count=$('#word-count'),chapterEditor=$('#audiobook-editor');
  const audio=$('#prepare').closest('section'),video=$('#clip-video').closest('section');
  const header=document.createElement('header');header.className='clip-inspector-header';header.innerHTML='';name.before(header);header.append(name);
- const scriptPanel=document.createElement('section');scriptPanel.innerHTML='<div class="inspector-intro"><h3>Write your script</h3><p>The words your twin will say in this clip.</p></div>';
- const label=sidebar.querySelector('label[for="script"]');label.textContent='Script';scriptPanel.append(label,script,count);
- const next=document.createElement('button');next.type='button';next.className='primary inspector-next';next.id='script-next';next.textContent=currentVoice()?'Review voice →':'Choose voice →';next.onclick=()=>selectTab('audio');scriptPanel.append(next);
+ const scriptPanel=document.createElement('section');if(!chapterEditor)scriptPanel.innerHTML='<div class="inspector-intro"><h3>Write your script</h3><p>The words your twin will say in this clip.</p></div>';
+ const label=sidebar.querySelector('label[for="script"]');label.textContent=chapterEditor?'Chapter script':'Script';scriptPanel.append(label,script,count);const tools=document.createElement('div');tools.className='text-tool-actions';tools.innerHTML='<button type="button" data-text-tool="transcribe">Transcribe audio</button><button type="button" data-text-tool="translate">Translate</button>';scriptPanel.append(tools);
+ const next=document.createElement('button');next.type='button';next.className='primary inspector-next';next.id='script-next';next.textContent=currentVoice()?'Review voice →':'Choose voice →';next.onclick=()=>{
+  if(!chapterEditor){selectTab('audio');return;}
+  if(inspectorCollapsed)$('#toggle-inspector').click();
+  $('#profile-select').focus();
+ };scriptPanel.append(next);
  const panels={script:scriptPanel,audio,video},tabs=document.createElement('div');tabs.className='clip-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Clip creation steps');header.after(tabs);
  for(const [index,[key,label]] of [['script','Script'],['audio','Voice'],['video','Video']].entries()){
   const button=document.createElement('button');button.type='button';button.innerHTML=`<span class="step-number">${index+1}</span><span>${label}</span>`;button.id='clip-tab-'+key;button.setAttribute('role','tab');button.setAttribute('aria-controls','clip-panel-'+key);tabs.append(button);
   const panel=panels[key];panel.id='clip-panel-'+key;panel.classList.add('clip-tab-panel');panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',button.id);sidebar.insertBefore(panel,$('.clip-options'));
-  button.onclick=()=>selectTab(key);button.onkeydown=e=>{const keys=podcastAudioOnly()?['script','audio']:['script','audio','video'];if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const i=e.key==='Home'?0:e.key==='End'?keys.length-1:(keys.indexOf(key)+(e.key==='ArrowRight'?1:keys.length-1))%keys.length;selectTab(keys[i]);$('#clip-tab-'+keys[i]).focus();};
+  button.onclick=()=>selectTab(key);button.onkeydown=e=>{const keys=audioWorkspaceOnly()?['script','audio']:['script','audio','video'];if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const i=e.key==='Home'?0:e.key==='End'?keys.length-1:(keys.indexOf(key)+(e.key==='ArrowRight'?1:keys.length-1))%keys.length;selectTab(keys[i]);$('#clip-tab-'+keys[i]).focus();};
  }
  const voiceOptions=$('.clip-options'),takes=$('#clip-takes'),remove=voiceOptions.querySelector('[data-remove-section]'),rewrite=voiceOptions.querySelector('.writing-actions')?.closest('details');
  remove?.remove();
@@ -391,6 +484,7 @@ function setupClipTabs(){
  const engineNote=document.createElement('p');engineNote.id='voice-engine-summary';engineNote.className='voice-engine-summary';engineNote.textContent=voiceSetupSummary();$('#profile-select').after(engineNote);
  audio.insertBefore(voiceOptions,$('#clip-audio'));
  const editTwin=$('#edit-selected-twin');editTwin.className='small subtle edit-voice-twin';engineNote.after(editTwin);
+ const modelSelect=$('#profile-select'),modelMenu=audio.querySelector('.collection-menu');if(modelMenu){const row=document.createElement('div');row.className='studio-model-select';modelSelect.before(row);row.append(modelSelect,modelMenu);}
  const feedback=document.createElement('div');feedback.id='voice-feedback';feedback.className='voice-feedback';feedback.setAttribute('role','status');feedback.setAttribute('aria-live','polite');$('#clip-audio').before(feedback);
  const nextVideo=document.createElement('button');nextVideo.type='button';nextVideo.id='voice-next';nextVideo.className='inspector-next subtle';nextVideo.textContent='Continue to video →';nextVideo.onclick=()=>selectTab('video');audio.append(nextVideo);
  const videoIntro=document.createElement('div');videoIntro.className='inspector-intro';videoIntro.innerHTML='<h3>Add video <span>Optional</span></h3><p>Bring this voice clip to life with a presenter or scene.</p>';video.prepend(videoIntro);
@@ -398,63 +492,280 @@ function setupClipTabs(){
  const goVoice=document.createElement('button');goVoice.type='button';goVoice.id='video-go-voice';goVoice.className='small';goVoice.textContent='Create voice first';goVoice.onclick=()=>selectTab('audio');prerequisite.after(goVoice);
  takes.className='inspector-disclosure take-history';audio.append(takes);
  function selectTab(key,refresh=true){clipTab=key;for(const [k,panel] of Object.entries(panels)){panel.hidden=k!==key;const b=$('#clip-tab-'+k);b.setAttribute('aria-selected',String(k===key));b.tabIndex=k===key?0:-1;}if(key!=='script')panels[key].append(takes);if(refresh)renderTakes();}
- selectTab(clipTab,false);
+ if(chapterEditor){
+  tabs.remove();video.hidden=true;
+  for(const panel of [audio,scriptPanel]){
+   panel.removeAttribute('role');panel.removeAttribute('aria-labelledby');
+  }
+  scriptPanel.classList.add('audiobook-script-panel');
+  header.append(chapterEditor.querySelector('.audiobook-script-actions'));
+  chapterEditor.prepend(header);
+  chapterEditor.append(scriptPanel);
+ }else selectTab(clipTab,false);
+}
+function audiobookCharacters(p){
+ return p.tracks.filter(t=>t.kind!=='music'&&t.id!=='music');
+}
+function addAudiobookDialogue(p,chapter,turns){
+ const first=chapter.blocks[0];
+ const replaceDraft=turns.some(turn=>turn.text)&&chapter.blocks.length===1&&!first.text.trim();
+ if(p.sections.length+turns.length-Number(replaceDraft)>100)throw Error('Use up to 100 dialogue blocks and audio clips.');
+ const blocks=turns.map((turn,i)=>{
+  const reuse=replaceDraft&&i===0,number=chapter.blocks.length+i+1-Number(replaceDraft);
+  return {
+   id:reuse?first.id:crypto.randomUUID(),
+   chapterId:chapter.id,chapterTitle:chapter.title,
+   title:reuse?chapter.title:`${chapter.title.slice(0,85)} · Dialogue ${number}`,
+   text:turn.text,trackId:turn.speakerId
+  };
+ });
+ timelineMutation(()=>{
+  if(replaceDraft)p.sections.splice(p.sections.indexOf(first),1,blocks[0]);
+  const last=replaceDraft?blocks[0]:chapter.blocks.at(-1);
+  p.sections.splice(p.sections.indexOf(last)+1,0,...blocks.slice(Number(replaceDraft)));
+  sectionId=blocks[0].id;clipTab='script';
+ });
+ $('#script')?.focus();
+}
+function addAudiobookCharacter(p){
+ if(p.tracks.length>=16)throw Error('Remove an unused audio track before adding a character.');
+ showDialog(`<div class="dialog-head"><h2>Add character</h2><button type="button" data-close aria-label="Close">✕</button></div>
+  <form id="add-character-form"><label>Character name<input name="name" required maxlength="100" autofocus></label>
+  <label>Voice model<select name="profileId">${options([['','Choose later'],...state.profiles.map(profile=>[profile.id,profile.name])],'')}</select></label>
+  <div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary">Add character</button></div></form>`);
+ $('#add-character-form').onsubmit=e=>{
+  e.preventDefault();
+  action(async()=>{
+   const data=new FormData(e.target),name=data.get('name').trim(),profileId=data.get('profileId');
+   if(!name||/[:：]/.test(name))throw Error('Enter a character name without a colon.');
+   if(audiobookCharacters(p).some(t=>t.name.toLowerCase()===name.toLowerCase()))throw Error('Use a different name for each character.');
+   checkpointTimeline();
+   p.tracks.push({id:crypto.randomUUID(),name,profileId,kind:'character',volume:1,muted:false});
+   edit();await save();closeDialog();renderKeepingTimelineViewport();
+  });
+ };
+}
+function pasteAudiobookDialogue(p,chapter){
+ const characters=audiobookCharacters(p);
+ showDialog(`<div class="dialog-head"><h2>Paste dialogue</h2><button data-close aria-label="Close">✕</button></div>
+  <p class="note">Start each block with a character name, followed by a colon. Dialogue is added to ${escape(chapter.title)}.</p>
+  <p class="note">Characters: ${escape(characters.map(t=>t.name).join(', '))}</p>
+  <label>Script<textarea id="audiobook-paste-script" autofocus placeholder="${escape(characters[0].name)}: The door swung open."></textarea></label>
+  <p id="audiobook-paste-error" class="error" role="alert" hidden></p>
+  <div class="dialog-actions"><button data-close>Cancel</button><button id="apply-audiobook-script" class="primary">Add dialogue</button></div>`);
+ $('#apply-audiobook-script').onclick=()=>{
+  const error=$('#audiobook-paste-error');
+  try{
+   const turns=parsePodcastScript($('#audiobook-paste-script').value,characters,{podcast:false});
+   addAudiobookDialogue(p,chapter,turns);closeDialog();$('#script')?.focus();
+  }catch(e){error.hidden=false;error.textContent=e.message;}
+ };
+}
+function setupAudiobookStudio(p,sec){
+ const monitor=$('#program-monitor');
+ const addChapter=$('[data-add-section]');
+ const chapter=audiobookChapters(p).find(ch=>ch.id===audiobookChapterId(sec));
+ monitor.classList.add('audiobook-workspace');
+ monitor.innerHTML=`<div class="audiobook-writing"><section class="audiobook-chapters" aria-labelledby="audiobook-chapters-title">
+  <header><h2 id="audiobook-chapters-title">Chapters</h2></header><ul id="audiobook-chapter-list"></ul>
+ </section>${chapter?'<section id="audiobook-editor" aria-label="Chapter script editor"></section>':'<p class="note audiobook-empty">Choose a chapter to edit its script.</p>'}</div>`;
+ addChapter.textContent='+ Chapter';
+ monitor.querySelector('.audiobook-chapters header').append(addChapter);
+ const selectBlock=id=>action(async()=>{
+  await save();
+  audioSession().selectedTrackId=null;sectionId=id;clipTab='script';render();$('#script')?.focus();
+ });
+ $('#audiobook-chapter-list').onclick=e=>{
+  const button=e.target.closest('[data-audiobook-chapter]');
+  if(button)selectBlock(button.dataset.audiobookChapter);
+ };
+ if(!chapter)return;
+ $('.clip-sidebar').setAttribute('aria-label','Character voice');
+ $('#section-title').setAttribute('aria-label','Chapter name');
+ $('#section-title').maxLength=100;
+ $('#section-title').value=chapter.title;
+ $('#script').setAttribute('aria-label','Chapter text');
+ $('#script').placeholder='Write or paste this dialogue block…';
+ $('#script').maxLength=50000;
+ const characters=audiobookCharacters(p),trackId=voiceTrackFor(p,sec)?.id||characters[0].id;
+ $('#audiobook-editor').innerHTML=`<div class="audiobook-editor-controls">
+  <label>Dialogue block<select id="audiobook-block">${options(chapter.blocks.map((block,i)=>[block.id,`${i+1} · ${voiceTrackFor(p,block)?.name||'Narrator'}`]),sec.id)}</select></label>
+  <label>Character<select id="audiobook-character">${options(characters.map(t=>[t.id,t.name]),trackId)}</select></label>
+ </div><div class="audiobook-script-actions">
+  <button id="audiobook-add-block">+ Dialogue</button><button id="audiobook-paste">Paste dialogue</button>
+  <button id="audiobook-add-character">Add character</button><button id="audiobook-generate" class="primary">Generate chapter audio</button>
+  <button id="audiobook-stop" hidden>Stop after current block</button>
+ </div><p id="audiobook-progress" class="note" role="status" hidden></p>`;
+ $('#audiobook-block').onchange=e=>selectBlock(e.target.value);
+ $('#audiobook-character').onchange=e=>timelineMutation(()=>{sec.trackId=e.target.value;});
+ $('#audiobook-add-block').onclick=()=>action(()=>addAudiobookDialogue(p,chapter,[{speakerId:trackId,text:''}]));
+ $('#audiobook-paste').onclick=()=>pasteAudiobookDialogue(p,chapter);
+ $('#audiobook-add-character').onclick=()=>action(()=>addAudiobookCharacter(p));
+ $('#audiobook-generate').onclick=()=>action(()=>generatePodcastAudio(p,undefined,chapter.id));
+ $('#audiobook-stop').onclick=()=>{
+  const run=podcastRuns.get(p.id);
+  if(run?.active){run.stop=true;run.message='Stopping after the current block.';updateAudiobookChapters();}
+ };
+}
+function updateAudiobookChapters(){
+ const list=$('#audiobook-chapter-list');if(!list)return;
+ const p=current(),chapters=audiobookChapters(p),selected=audiobookChapterId(section());
+ stableContent(list,chapters.map(chapter=>{
+  const status=chapter.blocks.every(block=>currentVoice(block))?'Audio ready':chapter.blocks.some(block=>block.text.trim())?'Needs narration':'Draft';
+  return `<li><button type="button" data-audiobook-chapter="${escape(chapter.blocks[0].id)}"${chapter.id===selected?' aria-current="true"':''}><strong>${escape(chapter.title)}</strong><span>${status}</span></button></li>`;
+ }).join(''));
+ const generate=$('#audiobook-generate');if(!generate)return;
+ const run=podcastRuns.get(p.id),currentRun=run?.chapterId===selected?run:null,progress=$('#audiobook-progress'),stop=$('#audiobook-stop');
+ generate.disabled=!!run?.active||!chapters.find(ch=>ch.id===selected)?.blocks.some(block=>block.text.trim());
+ progress.hidden=!currentRun?.message;progress.textContent=currentRun?.message||'';
+ stop.hidden=!currentRun?.active;stop.disabled=!!currentRun?.stop;
 }
 function renderStudio(){
  const p=current();if(!p){content.innerHTML=`<div class="studio-welcome"><div class="studio-welcome-art">${icon('wave')}</div><span class="page-eyebrow">YOUR PERSONAL STUDIO</span><h2>Bring your next idea to life.</h2><p>A conversation, a story, a voice that feels like you.<br>Start a project and make it yours.</p><button data-new class="primary">Create a project</button><button data-view="library">Explore your library →</button></div>`;return;}
- if(p.projectType==='dubbing'){dubbingWorkspace=mountDubbing(content,{project:p,getState:()=>state,api,assetUrl,escape,options,edit,save,refresh,action,toast,native,stableContent,openProject,editTwin:createTwin,chooseVideo:pickDubbingVideo});return;}
+ if(p.projectType==='dubbing'){dubbingWorkspace=mountDubbing(content,{project:p,getState:()=>state,api,assetUrl,escape,options,edit,save,refresh,action,toast,native,stableContent,openProject,editTwin:createTwin,chooseVideo:pickDubbingVideo,bindCollectionActions});bindCollectionActions();return;}
 if(ensurePodcastTracks(p))edit();
- const sec=section();sectionId=sec.id;if(podcastAudioOnly()&&clipTab==='video')clipTab='audio';
- const provider=twinVoiceSetting('voiceProvider','openrouter'),cloud=provider==='openrouter',local=provider==='local';
- content.innerHTML=`<div class="clip-studio"><header class="clip-project"><select id="project-select" aria-label="Project">${options(state.projects.map(p=>[p.id,p.title]),p.id)}</select><div class="project-file-actions"><button data-new title="New project (⌘N)">New</button><button data-open-project title="Open project (⌘O)">Open</button></div>${native?'<button type="button" id="native-project-actions" class="native-project-actions" aria-label="Project actions" aria-haspopup="menu" title="Project actions">•••</button>':'<details class="project-menu"><summary aria-label="Project actions" title="Project actions">•••</summary><div class="project-menu-popover"><button type="button" data-rename>Rename project</button></div></details>'}<span id="save-state">${dirty?'Saving…':'Saved'}</span><button id="toggle-inspector" class="inspector-toggle" type="button" aria-label="Hide clip sidebar" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button></header><div class="clip-workspace"><div class="clip-canvas"><div id="program-monitor"></div><section class="timeline" aria-label="Timeline editor"><div class="timeline-heading"><div id="timeline-transport"></div><button data-add-section class="primary">+ Clip</button></div><div id="timeline-clips"></div><div id="timeline-preview" hidden></div></section></div><aside class="clip-sidebar" aria-label="Selected clip"><input id="section-title" aria-label="Clip name" value="${escape(sec.title)}"><label for="script">Text</label><textarea id="script" aria-label="Clip text" placeholder="What should this clip say?">${escape(sec.text)}</textarea><span id="word-count" class="note"></span><section><div class="clip-step"><h3>Voice</h3><span id="clip-voice-status"></span></div><select id="profile-select" aria-label="Voice model">${options([['','Choose a model'],...state.profiles.map(p=>[p.id,p.name])],profileIdFor(p,sec))}</select><div id="clip-audio"></div><button id="prepare" class="primary">Generate voice</button></section><section><div class="clip-step"><h3>Video</h3><span id="clip-video-status"></span></div><label>Video type<select id="video-workflow">${options([['avatar','Lip-synced presenter'],['scene','Scene visuals over voice']],sec.videoWorkflow||'avatar')}</select></label><p id="video-workflow-note" class="note"></p><div id="scene-image-preview"></div><button id="choose-scene-image">Choose image</button><input id="scene-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><label>Video aspect ratio<select id="scene-generation-ratio">${options([['16:9','16:9 · Landscape'],['9:16','9:16 · Portrait'],['1:1','1:1 · Square'],['4:3','4:3']],sec.sceneAspectRatio||p.previewRatio||'16:9')}</select></label><label for="scene-prompt">Scene</label><textarea id="scene-prompt" placeholder="Describe the view, action and camera movement…">${escape(sec.scenePrompt||'')}</textarea><button id="clip-video">Generate video</button></section><details class="clip-options"><summary>Options</summary><label>Voice provider<select id="voice-provider">${options([['local','This Mac · Built-in'],['openrouter','OpenRouter'],['worker','Worker'],['voicestudio','VoiceStudio']],provider)}</select></label><label>Language<select id="language">${options([['en','English'],['ar','Arabic'],['hi','Hindi'],['ml','Malayalam'],['es','Spanish'],['fr','French'],['zh','Chinese'],['ja','Japanese'],['ko','Korean'],['de','German'],['ru','Russian'],['pt','Portuguese'],['it','Italian']],p.language)}</select></label>${provider==='voicestudio'?'<p class="note">OmniVoice · Uses your twin’s voice sample. Non-commercial testing.</p><input id="engine" type="hidden" value="omnivoice">':local?'<div id="local-speech-controls"></div>':cloud?'<div id="speech-controls"></div>':'<label>Model<select id="engine">'+options((state.settings.capabilities?.engines||[]).filter(e=>e.kind==='voice'&&e.ready).map(e=>[e.id,e.name||e.id]),'')+'</select></label>'}<button id="edit-selected-twin">Edit model</button><details><summary>Rewrite</summary><div class="writing-actions">${['polish','shorten','expand'].map(a=>`<button data-write="${a}">${a}</button>`).join('')}</div></details><details id="clip-takes"><summary>Previous takes <span id="take-count"></span></summary><div id="takes"></div></details><button data-remove-section ${p.sections.length===1?'disabled':''}>Remove clip</button></details></aside></div></div>`;
- if(native){const button=$('#native-project-actions');button.onclick=()=>action(async()=>{const rect=button.getBoundingClientRect();await invoke('show_project_menu',{x:rect.left,y:rect.bottom+4});});}
- else {const projectMenu=$('.project-menu'),projectTrigger=projectMenu.querySelector('summary');projectMenu.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();projectMenu.open=false;projectTrigger.focus();}else if(e.key==='ArrowDown'&&e.target===projectTrigger){e.preventDefault();e.stopPropagation();projectMenu.open=true;projectMenu.querySelector('button').focus();}});projectMenu.querySelector('[data-rename]').addEventListener('click',()=>{projectMenu.open=false;});}
- setupClipTabs();mountInspector();
+ if(isAudiobook(p)){
+  if(!p.tracks?.some(t=>t.kind!=='music'&&t.id!=='music')){
+   p.tracks=[{id:'voice',name:'Narrator',volume:1,muted:false},...(p.tracks||[])];edit();
+  }
+  const narrator=p.tracks.find(t=>t.id==='voice'&&t.name==='Voice');
+  if(narrator){narrator.name='Narrator';edit();}
+ }
+ const sec=section();sectionId=sec.id;if(audioWorkspaceOnly()&&clipTab==='video')clipTab='audio';
+ const provider=twinVoiceSetting('voiceProvider','openrouter'),cloud=provider==='openrouter'||provider.startsWith('api:'),local=provider==='local';
+ content.innerHTML=`<div class="clip-studio"><header class="clip-project"><button type="button" class="project-library-back" data-view="library" aria-label="Back to Library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>Library</button><span class="project-breadcrumb-divider" aria-hidden="true">/</span><select id="project-select" aria-label="Project">${options(state.projects.map(p=>[p.id,p.title]),p.id)}</select>${collectionMenu('projects',p,{rename:true})}<span id="save-state">${dirty?'Saving…':'Saved'}</span><button id="toggle-inspector" class="inspector-toggle" type="button" aria-label="Hide clip sidebar" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button></header><div class="clip-workspace"><div class="clip-canvas"><div id="program-monitor"></div><section class="timeline" aria-label="Timeline editor"><div class="timeline-heading"><div id="timeline-transport"></div><button data-add-section class="primary">+ Clip</button></div><div id="timeline-clips"></div><div id="timeline-preview" hidden></div></section></div><aside class="clip-sidebar" aria-label="Selected clip"><input id="section-title" aria-label="Clip name" value="${escape(sec.title)}"><label for="script">Text</label><textarea id="script" aria-label="Clip text" placeholder="What should this clip say?">${escape(sec.text)}</textarea><span id="word-count" class="note"></span><section><div class="clip-step"><h3>Voice</h3><span id="clip-voice-status"></span></div><select id="profile-select" aria-label="Voice model">${options([['','Choose a model'],...state.profiles.map(p=>[p.id,p.name])],profileIdFor(p,sec))}</select>${collectionMenu('profiles',state.profiles.find(t=>t.id===profileIdFor(p,sec)))}<div id="clip-audio"></div><button id="prepare" class="primary">Generate voice</button></section><section><div class="clip-step"><h3>Video</h3><span id="clip-video-status"></span></div><label>Video type<select id="video-workflow">${options([['avatar','Lip-synced presenter'],['scene','Scene visuals over voice']],sec.videoWorkflow||'avatar')}</select></label><p id="video-workflow-note" class="note"></p><div id="scene-image-preview"></div><button type="button" id="choose-scene-image">Choose image</button><button type="button" id="reset-clip-image" hidden></button><input id="scene-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><label>Video aspect ratio<select id="scene-generation-ratio">${options([['16:9','16:9 · Landscape'],['9:16','9:16 · Portrait'],['1:1','1:1 · Square'],['4:3','4:3']],sec.sceneAspectRatio||p.previewRatio||'16:9')}</select></label><label for="scene-prompt">Scene</label><textarea id="scene-prompt" maxlength="10000"></textarea><button id="clip-video">Generate video</button></section><details class="clip-options"><summary>Options</summary><label>Voice provider<select id="voice-provider">${options([['local','This Mac · Built-in'],['openrouter','OpenRouter'],['worker','Worker'],['voicestudio','VoiceStudio'],...(state.settings.providers||[]).filter(p=>p.models.some(m=>m.kind==='speech')).map(p=>[p.id,p.name])],provider)}</select></label><label>Language<select id="language">${options(twinLanguages,p.language)}</select></label>${provider==='voicestudio'?'<p class="note">OmniVoice · Uses your twin’s voice sample. Non-commercial testing.</p><input id="engine" type="hidden" value="omnivoice">':local?'<div id="local-speech-controls"></div>':cloud?'<div id="speech-controls"></div>':'<label>Model<select id="engine">'+options((state.settings.capabilities?.engines||[]).filter(e=>e.kind==='voice'&&e.ready).map(e=>[e.id,e.name||e.id]),'')+'</select></label>'}<button id="edit-selected-twin">Edit model</button><details><summary>Rewrite</summary><div class="writing-actions">${['polish','shorten','expand'].map(a=>`<button data-write="${a}">${a}</button>`).join('')}</div></details><details id="clip-takes"><summary>Previous takes <span id="take-count"></span></summary><div id="takes"></div></details><button data-remove-section ${p.sections.length===1?'disabled':''}>Remove clip</button></details></aside></div></div>`;
+ $('.clip-studio').classList.toggle('audio-workspace-only',audioWorkspaceOnly());
+ if(isAudiobook(p))setupAudiobookStudio(p,sec);
+ bindCollectionActions();setupClipTabs();mountInspector();
  setupImportedAudio(sec);
- setupSceneImage(sec);
- const updateVideoWorkflow=()=>{const avatar=$('#video-workflow').value==='avatar';for(const el of [$('#scene-image-preview'),$('#choose-scene-image'),$('label[for="scene-prompt"]'),$('#scene-prompt')])el.hidden=avatar;$('#video-workflow-note').textContent=avatar?'Animate your twin’s portrait to match this voice take.':'Create scene visuals with your voice as narration.';};
- $('#video-workflow').onchange=e=>{sec.videoWorkflow=e.target.value;edit();updateVideoWorkflow();};updateVideoWorkflow();
+ setupClipVideoInputs(p,sec);
  setupPodcastStudio(p,sec);
  $('#scene-generation-ratio').onchange=e=>{sec.sceneAspectRatio=e.target.value;edit();renderTakes();};
  $('#project-select').onchange=async e=>{await save();projectId=e.target.value;sectionId=null;localStorage.setItem('mytwin-project',projectId);render();};
  $('#script').oninput=e=>{audioSession().selectedTrackId=null;sec.text=e.target.value;edit();counts();renderTakes();};
- $('#section-title').onchange=e=>{sec.title=e.target.value.trim()||'Clip';edit();renderTimeline();};
- $('#profile-select').onchange=e=>{if(voiceTrackFor(p,sec)?.profileId)voiceTrackFor(p,sec).profileId=e.target.value;else if(isPodcast(p))speakerFor(p,sec).profileId=e.target.value;else p.profileId=e.target.value;edit();render();};$('#language').onchange=e=>{p.language=e.target.value;edit();renderLocalControls();renderClipStatus();};
+ $('#section-title').onchange=e=>{
+  const title=e.target.value.trim();
+  if(isAudiobook(p)&&!sec.audioAssetId){
+   const chapter=audiobookChapters(p).find(ch=>ch.id===audiobookChapterId(sec));
+   for(const [i,block] of chapter.blocks.entries()){
+    block.chapterId=chapter.id;block.chapterTitle=title||'Chapter';
+    block.title=i===0?block.chapterTitle:`${block.chapterTitle.slice(0,85)} · Dialogue ${i+1}`;
+   }
+  }else sec.title=title||'Clip';
+  edit();updateAudiobookChapters();renderTimeline();
+ };
+ $('#profile-select').onchange=e=>{if(voiceTrackFor(p,sec)?.kind==='character'||voiceTrackFor(p,sec)?.profileId)voiceTrackFor(p,sec).profileId=e.target.value;else if(isPodcast(p))speakerFor(p,sec).profileId=e.target.value;else p.profileId=e.target.value;edit();render();};$('#language').onchange=e=>{p.language=e.target.value;edit();renderLocalControls();renderClipStatus();};
  $('#edit-selected-twin').onclick=()=>createTwin(state.profiles.find(x=>x.id===profileIdFor(p,sec)));
  $('#voice-provider').onchange=e=>action(async()=>{await saveTwinVoiceSetting('voiceProvider',e.target.value);render();});
  $('#clip-video').onclick=()=>{const pending=activeVideoJob(state.jobs,sec.id,currentVoice()?.id);if(pending){$('.clip-options').open=true;$('#clip-takes').open=true;$('#clip-takes').scrollIntoView({block:'nearest'});return;}p.mode='voice';p.videoTrack=true;edit();if($('#video-workflow').value==='avatar'){avatarVideoSettings.aspect_ratio=$('#scene-generation-ratio').value;generateTrackVideo({sec:projectSection(p,sec),take:currentVoice()});}else generateSceneVideo({sec:projectSection(p,sec),take:currentVoice()});};
- $('#prepare').onclick=()=>action(async()=>{const button=$('#prepare');button.disabled=true;try{if(!sec.text.trim())throw Error('Write your clip text first.');if(!profileIdFor(p,sec))throw Error('Choose a model for the speaking character first.');await save();const job=await api('/jobs','POST',isPodcast(p)?podcastVoiceRequest(state,p,sec):{projectId:p.id,sectionId:sec.id,kind:'voice',provider,...(local?{instruct:twinVoiceSetting('localEngine','qwen3')==='qwen3-custom'?(selectedTwin()?.localVoiceInstruction||''):'',speech:Object.fromEntries(['speed','sentencePause','volume'].map(key=>[key,Number($('#speech-'+key).value)]))}:{}),engine:local?(twinVoiceSetting('localEngine','qwen3')):cloud?twinVoiceSetting('speechModel',''):provider==='voicestudio'?'omnivoice':(selectedTwin()?.voiceEngine||$('#engine').value),voiceMode:local?(isLocalPreset(twinVoiceSetting('localEngine','qwen3'))?'preset':'clone'):twinVoiceSetting('voiceMode','clone'),voice:presetVoiceFor(p,sec)||(local?(twinVoiceSetting('localVoice',defaultLocalVoice(twinVoiceSetting('localEngine','qwen3')))):cloudPresetVoice())});await selectClipVoiceTake(p,job);if(provider==='voicestudio'||local||cloud||state.settings.workerStatus==='connected')await api('/jobs/'+job.id+'/submit','POST');else toast('Saved for when Worker is connected.');await refresh();renderTakes();}finally{button.disabled=false;renderClipStatus();}});
+ $('#prepare').onclick=()=>action(async()=>{const button=$('#prepare');button.disabled=true;try{if(!sec.text.trim())throw Error('Write your clip text first.');if(!profileIdFor(p,sec))throw Error('Choose a model for the speaking character first.');await save();const job=await api('/jobs','POST',isPodcast(p)?podcastVoiceRequest(state,p,sec):{projectId:p.id,sectionId:sec.id,kind:'voice',provider,...(local?{instruct:['qwen3-custom','omnivoice'].includes(twinVoiceSetting('localEngine','qwen3'))?(selectedTwin()?.localVoiceInstruction||''):'',speech:Object.fromEntries(['speed','sentencePause','volume'].map(key=>[key,Number($('#speech-'+key).value)]))}:{}),engine:local?(twinVoiceSetting('localEngine','qwen3')):cloud?twinVoiceSetting('speechModel',''):provider==='voicestudio'?'omnivoice':(selectedTwin()?.voiceEngine||$('#engine').value),voiceMode:local?(isLocalPreset(twinVoiceSetting('localEngine','qwen3'))?'preset':'clone'):twinVoiceSetting('voiceMode','clone'),voice:presetVoiceFor(p,sec)||(local?(twinVoiceSetting('localVoice',defaultLocalVoice(twinVoiceSetting('localEngine','qwen3')))):cloudPresetVoice())});await selectClipVoiceTake(p,job);if(provider==='voicestudio'||local||cloud||state.settings.workerStatus==='connected')await api('/jobs/'+job.id+'/submit','POST');else toast('Saved for when Worker is connected.');await refresh();renderTakes();}finally{button.disabled=false;renderClipStatus();}});
  if(local)renderLocalControls();else if(cloud)renderSpeechControls();counts();renderTakes();
 }
 
 function counts(){if($('#script-next'))$('#script-next').disabled=!section().text.trim();const words=section().text.trim().split(/\s+/).filter(Boolean).length;$('#word-count').textContent=`${words} words · ~${Math.max(0,Math.round(words/150*60))} sec`;}
 function takeCard(j){if(j.parentVideoId)return ''; const p=state.projects.find(p=>p.id===j.projectId),sec=p?.id===current()?.id&&section()?.sourceSectionId===j.sectionId?section():p?.sections.find(s=>s.id===j.sectionId),stale=sec&&(sec.text!==j.text||!matchesSpeaker(p,sec,j))&&p.mode!=='audio';const labels={prepared:'Saved',waiting:'Waiting',submitting:'Sending',queued:'Queued',running:'Creating',completed:'Ready',failed:'Failed',cancelled:'Cancelled',cancel_requested:'Cancelling'};const output=state.assets.find(a=>a.id===j.outputId);const usableVoiceTake=voiceTakeBelongsToClip(j,p,sec),video=isVideoTake(j),usableVideo=videoTakeBelongsToClip(j,p,sec)&&output?.type.startsWith('video/'),voice=sec?timelineVoiceTake(state,p,sec):null,selectedVideo=usableVideo&&linkedVideo({sec:projectSection(p,sec),take:voice},state.jobs.filter(x=>x.projectId===p.id))?.id===j.id;
- return `<article data-take-id="${escape(j.id)}" class="take ${(video?selectedVideo:j.approved)?'approved':''}"><div class="take-top"><div><span class="take-title">${icon(j.kind==='voice'?'wave':'video')} ${escape(j.sectionTitle)} · ${j.kind==='voice'?'Voice':j.kind==='dub'?'Dub':j.kind==='video'?'Video':'Avatar'}</span><p>${escape(['openrouter','local','voicestudio'].includes(j.provider)&&j.voiceMode==='preset'?'Preset · '+j.voice:j.profileName)} <span>· ${escape(localStatus?.models?.[j.engine]?.name||state.settings.catalog?.models?.find(m=>m.id===j.engine)?.name||j.engine)}</span></p></div><span class="badge ${j.status==='completed'?'complete':''}">${labels[j.status]||escape(j.status)}</span></div><time>${new Date(j.createdAt).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time>${j.provider==='local'?`<p class="note">${Number(j.speech?.speed??1).toFixed(2)}× · ${j.speech?.sentencePause?`+${Number(j.speech.sentencePause).toFixed(1)} sec between sentences`:'Natural pauses'} · ${Math.round((j.speech?.volume??1)*100)}% volume</p>`:''}${j.kind==='avatar'&&j.engine==='infinitetalk'&&j.preset?`<p class="note">${escape(workerAvatarPresets.find(p=>p.id===(j.preset||'baseline'))?.name||'Worker')} · 480p · Removed from Worker</p>`:''}${j.kind==='avatar'&&j.video?.aspect_ratio?`<p class="note">${escape(j.video.aspect_ratio)} · ${escape(j.video.resolution)}</p>`:''}${stale?' <span class="badge stale">Older version</span>':''}${video?(selectedVideo?' <span class="badge complete">In use</span>':''):j.approved?' <span class="badge complete">Approved</span>':''}${usableVideo&&j.sourceJobId&&j.sourceJobId!==voice?.id?'<p class="note">This video was made with different audio. Your current audio will stay.</p>':''}<p>${escape((j.text||'Uploaded narration').slice(0,140))}${j.text.length>140?'…':''}</p>${j.error?`<p class="error">${escape(providerError(j.error))}</p>`:''}${j.status==='running'?`<p>${escape(j.stage)}</p>`:''}${output?output.type.startsWith('audio/')?`<audio controls preload="none" src="${assetUrl(output.id)}"></audio>`:`<video controls preload="metadata" src="${assetUrl(output.id)}"></video>`:''}<div class="take-actions">${usableVideo?`<button type="button" class="small" data-use-video="${escape(j.id)}" ${selectedVideo?'disabled':''}>${selectedVideo?'In use':'Use this video'}</button>`:''}${output?.type.startsWith('video/')?`<button class="small" data-dub-from="${j.id}">Dub with my twin</button>`:''}${j.kind==='voice'&&j.status==='completed'&&j.approved&&!stale?`<button class="small" data-avatar-from="${j.id}">Generate avatar video</button>`:''}${j.engine!=='infinitetalk'&&(['openrouter','local','voicestudio'].includes(j.provider)?j.status==='prepared':['prepared','waiting','failed'].includes(j.status))?`<button class="small" data-job="${j.id}" data-job-action="${j.remoteId?'refresh':'submit'}">${j.remoteId?'Check status':j.provider==='local'?'Generate on this Mac':j.provider==='openrouter'?'Generate with OpenRouter':j.provider==='voicestudio'?'Generate with VoiceStudio':'Start on Worker'}</button>`:''}${j.engine!=='infinitetalk'&&['queued','running','cancel_requested'].includes(j.status)?`<button class="small" data-job="${j.id}" data-job-action="refresh">Refresh</button>`:''}${j.kind!=='dub'&&j.engine!=='infinitetalk'&&(['openrouter','local','voicestudio'].includes(j.provider)?j.status==='prepared':!['completed','cancelled','cancel_requested'].includes(j.status))?`<button class="small subtle" data-job="${j.id}" data-job-action="cancel">Cancel</button>`:''}${output?`<a data-export="${output.id}" href="${native?'#':'/api/assets/'+output.id+'?download'}">Download ${j.kind==='voice'?'audio':'video'}</a>${(j.kind==='voice'?usableVoiceTake&&(!j.approved||sec?.voiceTakeId!==j.id):!video&&!j.approved&&!stale)?`<button class="small" data-job="${j.id}" data-job-action="approve">${icon('check')} ${j.kind==='voice'?'Use this take':'Approve'}</button>`:''}`:''}</div></article>`;
+ return `<article data-take-id="${escape(j.id)}" class="take ${(video?selectedVideo:j.approved)?'approved':''}"><div class="take-top"><div><span class="take-title">${icon(j.kind==='voice'?'wave':'video')} ${escape(j.sectionTitle)} · ${j.kind==='voice'?'Voice':j.kind==='dub'?'Dub':j.kind==='video'?'Video':'Avatar'}</span><p>${escape((['openrouter','local','voicestudio'].includes(j.provider)||j.provider?.startsWith('api:'))&&j.voiceMode==='preset'?'Preset · '+j.voice:j.profileName)} <span>· ${escape(localStatus?.models?.[j.engine]?.name||(state.settings.providers||[]).flatMap(p=>p.models||[]).find(m=>m.id===j.engine)?.name||state.settings.catalog?.models?.find(m=>m.id===j.engine)?.name||j.engine)}</span></p></div><span class="badge ${j.status==='completed'?'complete':''}">${labels[j.status]||escape(j.status)}</span></div><time>${new Date(j.createdAt).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time>${j.provider==='local'?`<p class="note">${Number(j.speech?.speed??1).toFixed(2)}× · ${j.speech?.sentencePause?`+${Number(j.speech.sentencePause).toFixed(1)} sec between sentences`:'Natural pauses'} · ${Math.round((j.speech?.volume??1)*100)}% volume</p>`:''}${j.kind==='avatar'&&j.engine==='infinitetalk'&&j.preset?`<p class="note">${escape(workerAvatarPresets.find(p=>p.id===(j.preset||'baseline'))?.name||'Worker')} · 480p · Removed from Worker</p>`:''}${j.kind==='avatar'&&j.video?.aspect_ratio?`<p class="note">${escape(j.video.aspect_ratio)} · ${escape(j.video.resolution)}</p>`:''}${stale?' <span class="badge stale">Older version</span>':''}${video?(selectedVideo?' <span class="badge complete">In use</span>':''):j.approved?' <span class="badge complete">Approved</span>':''}${usableVideo&&j.sourceJobId&&j.sourceJobId!==voice?.id?'<p class="note">This video was made with different audio. Your current audio will stay.</p>':''}<p>${escape((j.text||'Uploaded narration').slice(0,140))}${j.text.length>140?'…':''}</p>${j.error?`<p class="error">${escape(providerError(j.error))}</p>`:''}${j.status==='running'?`<p>${escape(j.stage)}</p>`:''}${output?output.type.startsWith('audio/')?`<audio controls preload="none" src="${assetUrl(output.id)}"></audio>`:`<video controls preload="metadata" src="${assetUrl(output.id)}"></video>`:''}<div class="take-actions">${usableVideo?`<button type="button" class="small" data-use-video="${escape(j.id)}" ${selectedVideo?'disabled':''}>${selectedVideo?'In use':'Use this video'}</button>`:''}${output?.type.startsWith('video/')?`<button class="small" data-dub-from="${j.id}">Dub with my twin</button>`:''}${j.kind==='voice'&&j.status==='completed'&&j.approved&&!stale&&!isAudiobook(p)?`<button class="small" data-avatar-from="${j.id}">Generate avatar video</button>`:''}${j.engine!=='infinitetalk'&&((['openrouter','local','voicestudio'].includes(j.provider)||j.provider?.startsWith('api:'))?j.status==='prepared':['prepared','waiting','failed'].includes(j.status))?`<button class="small" data-job="${j.id}" data-job-action="${j.remoteId?'refresh':'submit'}">${j.remoteId?'Check status':j.provider==='local'?'Generate on this Mac':j.provider?.startsWith('api:')?'Generate with provider':j.provider==='openrouter'?'Generate with OpenRouter':j.provider==='voicestudio'?'Generate with VoiceStudio':'Start on Worker'}</button>`:''}${j.engine!=='infinitetalk'&&['queued','running','cancel_requested'].includes(j.status)?`<button class="small" data-job="${j.id}" data-job-action="refresh">Refresh</button>`:''}${j.kind!=='dub'&&j.engine!=='infinitetalk'&&((['openrouter','local','voicestudio'].includes(j.provider)||j.provider?.startsWith('api:'))?j.status==='prepared':!['completed','cancelled','cancel_requested'].includes(j.status))?`<button class="small subtle" data-job="${j.id}" data-job-action="cancel">Cancel</button>`:''}${output?`<a data-export="${output.id}" href="${native?'#':'/api/assets/'+output.id+'?download'}">Download ${j.kind==='voice'?'audio':'video'}</a>${(j.kind==='voice'?usableVoiceTake&&(!j.approved||sec?.voiceTakeId!==j.id):!video&&!j.approved&&!stale)?`<button class="small" data-job="${j.id}" data-job-action="approve">${icon('check')} ${j.kind==='voice'?'Use this take':'Approve'}</button>`:''}`:''}</div></article>`;
 }
-function renderTakes(){if(dubbingWorkspace){dubbingWorkspace.update();return;}updatePodcastAudio();renderTimeline();updateTrackAudioStatus();renderClipStatus();if(!$('#takes'))return;const jobs=state.jobs.filter(j=>!j.parentVideoId&&j.projectId===projectId&&j.sectionId===(clipTab==='video'?(section()?.sourceSectionId||sectionId):sectionId)&&(clipTab==='video'?j.kind!=='voice':j.kind==='voice'));const signature=JSON.stringify([jobs,clipTab,section()?.text,current()?.podcast,section()?.speakerId,section()?.videoTakeId,section()?.pendingVideoTakeId,timelineVoiceTake(state,current(),section())?.id,projectSection(current(),section())?.sceneImageId,projectSection(current(),section())?.scenePrompt]);if($('#takes').dataset.signature===signature)return;$('#takes').dataset.signature=signature;$('#clip-takes').querySelector('summary').innerHTML=`${clipTab==='video'?'Video':'Voice'} takes <span id="take-count">${jobs.length}</span>`;stableContent($('#takes'),jobs.length?jobs.map(takeCard).join(''):`<div class="empty-list">${icon('wave')}<p>No takes yet</p></div>`);}
+function renderTakes(){if(dubbingWorkspace){dubbingWorkspace.update();return;}updatePodcastAudio();updateAudiobookChapters();renderTimeline();updateTrackAudioStatus();renderClipStatus();if(!$('#takes'))return;const jobs=state.jobs.filter(j=>!j.parentVideoId&&j.projectId===projectId&&j.sectionId===(clipTab==='video'?(section()?.sourceSectionId||sectionId):sectionId)&&(clipTab==='video'?j.kind!=='voice':j.kind==='voice'));const signature=JSON.stringify([jobs,clipTab,section()?.text,current()?.podcast,section()?.speakerId,section()?.videoTakeId,section()?.pendingVideoTakeId,timelineVoiceTake(state,current(),section())?.id,projectSection(current(),section())?.sceneImageId,projectSection(current(),section())?.scenePrompt]);if($('#takes').dataset.signature===signature)return;$('#takes').dataset.signature=signature;$('#clip-takes').querySelector('summary').innerHTML=`${clipTab==='video'?'Video':'Voice'} takes <span id="take-count">${jobs.length}</span>`;stableContent($('#takes'),jobs.length?jobs.map(takeCard).join(''):`<div class="empty-list">${icon('wave')}<p>No takes yet</p></div>`);}
 let exportingTimeline=false;
 function showShortcuts(){showDialog(`<div class="dialog-head"><h2>Keyboard shortcuts</h2><button data-close aria-label="Close">✕</button></div><dl class="shortcuts"><dt>Space</dt><dd>Play / pause</dd><dt>← / →</dt><dd>Seek 1 second · Shift for 0.1 second</dd><dt>Home / End</dt><dd>Start / end of timeline</dd><dt>↑ / ↓</dt><dd>Previous / next clip</dd><dt>Option + ← / →</dt><dd>Nudge clip 0.1 second · Shift for 1 second</dd><dt>Option + ↑ / ↓</dt><dd>Move clip to adjacent track</dd><dt>Drag clip</dt><dd>Move along or between audio tracks · Shift disables snapping</dd><dt>I / O</dt><dd>Trim start / end at playhead</dd><dt>R</dt><dd>Reset selected clip’s trim</dd><dt>M</dt><dd>Mute / unmute</dd><dt>B</dt><dd>Split selected clip at playhead</dd><dt>⌘D</dt><dd>Duplicate selected clip</dd><dt>⌘Z / ⇧⌘Z</dt><dd>Undo / redo timeline edit</dd><dt>S</dt><dd>Toggle snapping</dd><dt>F</dt><dd>Fit timeline to window</dd><dt>Delete</dt><dd>Remove selected clip</dd><dt>?</dt><dd>Show shortcuts</dd></dl>`);}
 async function exportTimeline(clips,project){if(exportingTimeline)return;exportingTimeline=true;const snapshot=structuredClone(clips),title=project.title;try{await save();const bytes=await renderTimelineAudio(snapshot,assetUrl,(i,n)=>{const b=$('#export-timeline');if(b){b.disabled=true;b.textContent=`Exporting ${i}/${n}…`; }},structuredClone(project.tracks));const filename=(title||'Timeline').replace(/[\\/:*?"<>|]/g,'-')+'.wav';if(native){let data='';for(let i=0;i<bytes.length;i+=16384)data+=String.fromCharCode(...bytes.subarray(i,i+16384));if(await invoke('export_timeline_audio',{data:btoa(data),name:filename}))toast('Timeline exported.');}else{const url=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'})),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);toast('Timeline exported.');}}catch(e){toast(e.message||String(e));}finally{exportingTimeline=false;const b=$('#export-timeline');if(b){b.disabled=false;b.textContent='Export audio';}}}
-function setupSceneImage(sec){
- const preview=$('#scene-image-preview'),asset=state.assets.find(a=>a.id===projectSection(current(),sec).sceneImageId);preview.innerHTML=asset?`<img src="${assetUrl(asset.id)}" alt="Scene reference">`:'';$('#choose-scene-image').textContent=asset?'Change image':'Choose image';
- const use=async a=>{if(!a)return;if(!['image/png','image/jpeg','image/webp'].includes(a.type))throw Error('Choose a JPG, PNG or WebP image.');sec.sceneImageId=a.id;edit();await refresh();setupSceneImage(sec);renderTakes();};
- $('#choose-scene-image').onclick=()=>action(async()=>{if(native)await use(await invoke('import_media',{kind:'avatar'}));else $('#scene-image-file').click();});
- $('#scene-image-file').onchange=e=>action(async()=>{if(e.target.files[0])await use(await upload(e.target.files[0]));});
- $('#scene-prompt').oninput=e=>{sec.scenePrompt=e.target.value;edit();renderTakes();};
+async function exportTimelineVideo(clips,project){
+ if(exportingTimeline)return;exportingTimeline=true;
+ const snapshot=structuredClone(clips),settings=structuredClone(project),jobs=structuredClone(state.jobs.filter(j=>j.projectId===project.id));
+ const status=text=>{const b=$('#export-timeline-video');if(b){b.disabled=true;b.textContent=text;}};
+ try{
+  if(!snapshot.some(c=>linkedVideo(c,jobs)))throw Error('Generate or select a finished video take before exporting video.');
+  await save();status('Preparing audio…');let plan;
+  const bytes=await renderTimelineAudio(snapshot,assetUrl,(i,n)=>status(`Preparing audio ${i}/${n}…`),settings.tracks,layout=>{plan=timelineVideoPlan(layout,jobs,settings);});
+  status('Exporting video…');const name=(settings.title||'Timeline').replace(/[\\/:*?"<>|]/g,'-')+'.mp4';
+  if(native){
+   let data='';for(let i=0;i<bytes.length;i+=16384)data+=String.fromCharCode(...bytes.subarray(i,i+16384));
+   if(await invoke('export_timeline_video',{data:btoa(data),name,plan}))toast('Video exported.');
+  }else{
+   const audio=await upload(new File([bytes],'Timeline mix.wav',{type:'audio/wav'}));
+   const result=await api('/timeline/export-video','POST',{...plan,audioId:audio.id,name});
+   const a=document.createElement('a');a.href='/api/assets/'+result.id+'?download';a.download=name;a.click();toast('Video exported.');
+  }
+ }catch(e){toast(e.message||String(e));}finally{exportingTimeline=false;const b=$('#export-timeline-video');if(b){b.disabled=false;b.textContent='Export video';}}
+}
+function setupClipVideoInputs(p,sec){
+ const workflow=$('#video-workflow'),preview=$('#scene-image-preview'),choose=$('#choose-scene-image');
+ const fileInput=$('#scene-image-file'),reset=$('#reset-clip-image'),prompt=$('#scene-prompt');
+ const isAvatar=()=>workflow.value==='avatar';
+ const promptField=()=>isAvatar()?'avatarMotionPrompt':'scenePrompt';
+ const updateImage=()=>{
+  const studioImage=p.podcast?.sceneImageId;
+  const portrait=isAvatar()?state.profiles.find(t=>t.id===profileIdFor(p,sec))?.avatarAssetId:'';
+  const asset=state.assets.find(a=>a.id===(sec.sceneImageId||studioImage||portrait)&&a.type.startsWith('image/'));
+  const source=sec.sceneImageId?'Clip image':studioImage?'Shared studio image':'Model portrait';
+  preview.innerHTML=asset?`<img src="${assetUrl(asset.id)}" alt="${source}"><p class="note">${source}</p>`:'';
+  choose.textContent=sec.sceneImageId?'Change image':'Choose image';
+  reset.hidden=!sec.sceneImageId;
+  reset.textContent=studioImage?'Use shared studio image':portrait?'Use model portrait':'Remove image';
+ };
+ const updateWorkflow=()=>{
+  $('#video-workflow-note').textContent=isAvatar()?'Use a photo with one clearly visible face.':'Create scene visuals with your voice as narration.';
+  prompt.labels[0].textContent=isAvatar()?'Motion instructions (optional)':isPodcast(p)?'Shot direction':'Scene';
+  prompt.placeholder=isAvatar()?'Smile gently and nod once…':isPodcast(p)?'Optional camera direction for this turn…':'Describe the view, action and camera movement…';
+  prompt.value=sec[promptField()]||'';
+  updateImage();
+ };
+ const use=async asset=>{
+  if(!asset||current()!==p||!p.sections.includes(sec))return;
+  sec.sceneImageId=asset.id;
+  edit();
+  await refresh();
+  if(preview.isConnected){updateImage();renderTakes();}
+ };
+ choose.onclick=()=>action(async()=>{if(native)await use(await invoke('import_media',{kind:'image'}));else fileInput.click();});
+ fileInput.onchange=()=>action(async()=>{
+  const file=fileInput.files[0];
+  fileInput.value='';
+  if(!file)return;
+  if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Choose a JPG, PNG or WebP image.');
+  if(file.size>20*1024*1024)throw Error('Use an image smaller than 20 MB.');
+  await use(await upload(file));
+ });
+ reset.onclick=()=>{delete sec.sceneImageId;edit();updateImage();renderTakes();};
+ workflow.onchange=()=>{sec.videoWorkflow=workflow.value;edit();updateWorkflow();};
+ prompt.oninput=()=>{sec[promptField()]=prompt.value;edit();if(!isAvatar())renderTakes();};
+ updateWorkflow();
 }
 async function generateSceneVideo(c){
- if(!c.take){toast('Generate a voiceover first.');return;}if(!c.sec.sceneImageId||!c.sec.scenePrompt?.trim()){toast('Choose an image and describe this scene.');return;}
+ if(!c.take){toast('Generate a voiceover first.');return;}
+ if(!c.sec.sceneImageId||!c.sec.scenePrompt?.trim()){toast('Choose an image and describe this scene.');return;}
  if(activeVideoJob(state.jobs,c.sec.id,c.take.id)){toast('This scene already has a video job.');return;}
- await action(async()=>{await save();const ctx=new AudioContext();let duration;try{const response=await fetch(assetUrl(c.take.outputId));if(!response.ok)throw Error('Could not read voice take');const audio=await ctx.decodeAudioData(await response.arrayBuffer());duration=audio.duration;const range=pacingTrim(c.sec,c.take.outputId,audio);if(range)c.sec={...c.sec,trims:{...c.sec.trims,[c.take.outputId]:range}};}finally{await ctx.close();}const trim=c.sec.trims?.[c.take.outputId];const audioStart=Math.max(0,trim?.start||0),audioEnd=Math.min(duration,trim?.end??duration);duration=audioEnd-audioStart;if(!modelsFor('video').length)state.settings.videoModels=await api('/openrouter/video-models');
- showDialog(`<h2>Generate video for voice clip</h2><p>${escape(c.sec.title)} · ${duration.toFixed(1)} seconds · ${escape(c.sec.sceneAspectRatio||current().previewRatio||'16:9')}</p><p id="scene-plan" class="note"></p><p id="scene-price" class="note"></p><div id="scene-model-settings"></div><p class="note">Sends this scene’s image and description to OpenRouter. Uses credits. Covers the full voice clip and includes its original audio. Longer clips use multiple generated shots. This scene mode does not lip-sync speech.</p><div class="dialog-actions"><button data-close>Cancel</button><button class="primary" id="generate-scene">Generate video</button></div>`);
- const models=modelsFor('video').filter(m=>m.supported_frame_images?.includes('first_frame'));
- $('#scene-model-settings').innerHTML=`${modelPicker('scene',models.some(m=>m.id===videoSelection)?videoSelection:models.find(m=>m.supported_aspect_ratios?.includes(c.sec.sceneAspectRatio||current().previewRatio||'16:9'))?.id||models[0]?.id||'','scene-model','sceneVideoModel','Model')}<div id="scene-output-options"></div>`;initModelPickers();
- const draw=()=>{const m=models.find(m=>m.id===$('#scene-model').value);const wanted=c.sec.sceneAspectRatio||current().previewRatio||'16:9';const supported=m?.supported_aspect_ratios?.includes(wanted);$('#generate-scene').disabled=!m||!supported;const plan=m?planVoiceVideo(duration,m.supported_durations):[];$('#scene-plan').textContent=m?`${duration.toFixed(1)} seconds of voice · ${plan.length} generated shot${plan.length===1?'':'s'} (${plan.join(' + ')} sec), assembled and trimmed to your audio. Each shot uses provider credits.`:'';$('#scene-output-options').innerHTML=m?`${[['resolution','supported_resolutions','Resolution'],['aspect_ratio','supported_aspect_ratios','Aspect ratio']].map(([key,field,label])=>`<label>${label}<select id="scene-${key}">${options([...(key==='aspect_ratio'&&!supported?[[wanted,wanted+' · unavailable for this model']]:[]),...(m[field]||[]).map(v=>[String(v),String(v)])],key==='aspect_ratio'?(c.sec.sceneAspectRatio||current().previewRatio||'16:9'):'')}</select></label>`).join('')}`:'<p>No image-to-video models available. Refresh models in Settings.</p>';};const price=()=>{const m=models.find(m=>m.id===$('#scene-model').value);$('#scene-price').textContent=m?videoEstimate(m,planVoiceVideo(duration,m.supported_durations),$('#scene-resolution')?.value):'';};$('#scene-model').onchange=()=>{draw();price();};draw();price();$('#scene-output-options').onchange=()=>{price();const m=models.find(m=>m.id===$('#scene-model').value);$('#generate-scene').disabled=!m?.supported_aspect_ratios?.includes($('#scene-aspect_ratio').value);};
- $('#generate-scene').onclick=()=>action(async()=>{const button=$('#generate-scene');button.disabled=true;button.classList.add('is-rendering');button.textContent='Sending…';try{const video={};for(const key of ['resolution','aspect_ratio']){const value=$('#scene-'+key).value;if(value)video[key]=key==='duration'?Number(value):value;}current().sections.find(s=>s.id===c.sec.id).sceneAspectRatio=video.aspect_ratio;edit();await save();videoSelection=$('#scene-model').value;const job=await api('/jobs','POST',{projectId:current().id,sectionId:c.sec.id,kind:'video',provider:'openrouter',engine:videoSelection,scene:true,sourceJobId:c.take.id,video,sequence:{duration,audioStart,segments:planVoiceVideo(duration,models.find(m=>m.id===videoSelection).supported_durations)}});await refresh();await selectClipVideoTake(current(),job,c.sec);renderTakes();await api('/jobs/'+job.id+'/submit','POST');await refresh();closeDialog();renderTakes();}finally{if($('#generate-scene')){button.disabled=false;button.classList.remove('is-rendering');button.textContent='Generate video';}}});});
+ await action(async()=>{
+  await save();const ctx=new AudioContext();let duration;
+  try{const response=await fetch(assetUrl(c.take.outputId));if(!response.ok)throw Error('Could not read voice take');const audio=await ctx.decodeAudioData(await response.arrayBuffer());duration=audio.duration;const range=pacingTrim(c.sec,c.take.outputId,audio);if(range)c.sec={...c.sec,trims:{...c.sec.trims,[c.take.outputId]:range}};}finally{await ctx.close();}
+  const trim=c.sec.trims?.[c.take.outputId],audioStart=Math.max(0,trim?.start||0),audioEnd=Math.min(duration,trim?.end??duration);duration=audioEnd-audioStart;
+  let provider=currentVideoProvider(state.settings),models=[];
+  if(provider==='openrouter'&&!state.settings.videoModels?.length)state.settings.videoModels=await api('/openrouter/video-models');
+  showDialog(`<h2>Generate video for voice clip</h2><p>${escape(c.sec.title)} · ${duration.toFixed(1)} seconds</p><label>Video provider<select id="scene-provider">${options(videoProviderChoices(state.settings),provider)}</select></label><p id="scene-plan" class="note"></p><p id="scene-price" class="note"></p><div id="scene-model-settings"></div><p class="note" id="scene-provider-note"></p><div class="dialog-actions"><button data-close>Cancel</button><button class="primary" id="generate-scene">Generate video</button></div>`);
+  function draw(){
+   const m=models.find(m=>m.id===$('#scene-model').value),wanted=c.sec.sceneAspectRatio||current().previewRatio||'16:9',supported=m?.supported_aspect_ratios?.includes(wanted),managed=provider.startsWith('api:');
+   $('#generate-scene').disabled=!m||!managed&&!supported;
+   const plan=m?planVoiceVideo(duration,m.supported_durations):[];
+   $('#scene-plan').textContent=m?`${duration.toFixed(1)} seconds of voice · ${plan.length} generated shot${plan.length===1?'':'s'} (${plan.join(' + ')} sec), assembled and trimmed to your audio. Each shot uses provider credits.`:'';
+   $('#scene-output-options').innerHTML=m?`${[['resolution','supported_resolutions','Resolution'],...(managed?[]:[['aspect_ratio','supported_aspect_ratios','Aspect ratio']])].map(([key,field,label])=>`<label>${label}<select id="scene-${key}">${options([...(key==='aspect_ratio'&&!supported?[[wanted,wanted+' · unavailable for this model']]:[]),...(m[field]||[]).map(v=>[String(v),String(v)])],key==='aspect_ratio'?wanted:'')}</select></label>`).join('')}`:'<p>No image-to-video models enabled. Add a provider in Settings → Video.</p>';
+   $('#scene-provider-note').textContent=`Sends this scene’s image and description to ${videoProviderChoices(state.settings).find(([id])=>id===provider)?.[1]||'your provider'}. Uses your provider credits. Covers the full voice clip and keeps your original narration. This does not lip-sync speech.${managed?' Higgsfield uses the reference photo’s aspect ratio.':''}`;
+  }
+  function price(){const m=models.find(m=>m.id===$('#scene-model').value);$('#scene-price').textContent=m?(provider.startsWith('api:')?'Billed to your Higgsfield account. Check current rates in the provider console.':videoEstimate(m,planVoiceVideo(duration,m.supported_durations),$('#scene-resolution')?.value)):'';}
+  function renderModels(){models=videoProviderModels(state.settings,provider).filter(m=>m.supported_frame_images?.includes('first_frame'));const selected=defaultVideoModel(state.settings,provider);$('#scene-model-settings').innerHTML=`${modelPicker('scene',models.some(m=>m.id===selected)?selected:models[0]?.id||'','scene-model','sceneVideoModel','Model',provider)}<div id="scene-output-options"></div>`;initModelPickers();$('#scene-model').onchange=()=>{draw();price();};draw();price();$('#scene-output-options').onchange=()=>{price();const m=models.find(m=>m.id===$('#scene-model').value);$('#generate-scene').disabled=!m||provider==='openrouter'&&!m.supported_aspect_ratios?.includes($('#scene-aspect_ratio')?.value);};}
+  $('#scene-provider').onchange=()=>{provider=$('#scene-provider').value;renderModels();};renderModels();
+  $('#generate-scene').onclick=()=>action(async()=>{
+   const button=$('#generate-scene');button.disabled=true;button.classList.add('is-rendering');button.textContent='Sending…';
+   try{const video={};for(const key of ['resolution','aspect_ratio']){const value=$('#scene-'+key)?.value;if(value)video[key]=value;}if(video.aspect_ratio){current().sections.find(s=>s.id===c.sec.id).sceneAspectRatio=video.aspect_ratio;edit();}await save();videoSelection=$('#scene-model').value;
+    const job=await api('/jobs','POST',{projectId:current().id,sectionId:c.sec.id,kind:'video',provider,engine:videoSelection,scene:true,sourceJobId:c.take.id,video,sequence:{duration,audioStart,segments:planVoiceVideo(duration,models.find(m=>m.id===videoSelection).supported_durations)}});
+    await refresh();await selectClipVideoTake(current(),job,c.sec);renderTakes();await api('/jobs/'+job.id+'/submit','POST');await refresh();closeDialog();renderTakes();
+   }finally{if($('#generate-scene')){button.disabled=false;button.classList.remove('is-rendering');button.textContent='Generate video';}}
+  });
+ });
 }
 function generateTrackVideo(c){
  const p=current();if(!c.take){toast('Generate a voice take first.');return;}if(activeVideoJob(state.jobs,c.sec.id,c.take.id)){toast('A video job already exists for this take.');return;}
- showDialog(`<h2>Generate avatar video</h2><p>${escape(c.sec.title)}</p><p class="note">OpenRouter</p><div id="track-avatar-options"></div><p class="note">Uses this voice take and the selected clip photo, falling back to your twin portrait.</p><div class="dialog-actions"><button data-close>Cancel</button><button class="primary" id="create-track-video">Generate video</button></div>`);
+ showDialog(`<h2>Generate avatar video</h2><p>${escape(c.sec.title)}</p><p class="note">OpenRouter</p><div id="track-avatar-options"></div><p class="note">Uses this voice take and the presenter image set for this clip.</p><div class="dialog-actions"><button data-close>Cancel</button><button class="primary" id="create-track-video">Generate video</button></div>`);
  $('#track-avatar-options').innerHTML='<label>Avatar model<select id="track-avatar-model"><option value="heygen/avatar-iv">HeyGen: Avatar IV · Lip-sync from your audio</option></select></label>'+avatarVideoControls('track-avatar')+'<p class="note">HeyGen Avatar IV · $0.05/second</p><label><input type="checkbox" id="track-audio-share"> Allow a temporary Cloudflare link to this audio (up to 30 minutes)</label><p class="note" id="track-sharing-note" role="status">OpenRouter needs access to your voice audio for lip-sync. Choose whether to allow the temporary link above to enable Generate.</p>';
  bindAvatarVideoControls('track-avatar');
  const sharing=()=>{const allowed=$('#track-audio-share').checked;$('#create-track-video').disabled=!allowed||$('#create-track-video').getAttribute('aria-busy')==='true';$('#track-sharing-note').textContent=allowed?'Temporary audio sharing allowed for this generation.':'OpenRouter needs access to your voice audio for lip-sync. Choose whether to allow the temporary link above to enable Generate.';};
@@ -462,7 +773,7 @@ function generateTrackVideo(c){
  $('#create-track-video').onclick=()=>action(async()=>{
   if(!$('#track-audio-share').checked)throw new Error('Allow the temporary audio link to use OpenRouter.');
   const button=$('#create-track-video');button.disabled=true;button.textContent='Sending…';button.classList.add('is-rendering');button.setAttribute('aria-busy','true');
-  try{await save();await api('/settings','PUT',{avatarProvider:'openrouter'});if(!c.take.approved)await api('/jobs/'+c.take.id+'/approve','POST');const job=await api('/jobs','POST',{projectId:p.id,sectionId:c.sec.id,kind:'avatar',provider:'openrouter',engine:'heygen/avatar-iv',...(c.sec.sceneImageId?{avatarAssetId:c.sec.sceneImageId,scenePrompt:c.sec.scenePrompt||''}:{}),video:avatarVideoOptions(),audioShare:true,sourceJobId:c.take.id});await refresh();await selectClipVideoTake(p,job,c.sec);renderTakes();await api('/jobs/'+job.id+'/submit','POST');await refresh();closeDialog();renderTakes();toast('Video generation started.');}
+  try{await save();await api('/settings','PUT',{avatarProvider:'openrouter'});if(!c.take.approved)await api('/jobs/'+c.take.id+'/approve','POST');const job=await api('/jobs','POST',{projectId:p.id,sectionId:c.sec.id,kind:'avatar',provider:'openrouter',engine:'heygen/avatar-iv',video:avatarVideoOptions(),audioShare:true,sourceJobId:c.take.id});await refresh();await selectClipVideoTake(p,job,c.sec);renderTakes();await api('/jobs/'+job.id+'/submit','POST');await refresh();closeDialog();renderTakes();toast('Video generation started.');}
   finally{if($('#create-track-video')){button.classList.remove('is-rendering');button.setAttribute('aria-busy','false');button.textContent='Generate video';sharing();}}
  });
 }
@@ -474,30 +785,50 @@ function renderTimeline(){
  if(kind==='voice'&&!p.tracks?.length)p.tracks=[{id:'voice',name:'Voice',volume:1,muted:false}];
  if(!p.tracks.some(t=>t.kind==='music'||t.id==='music')){p.tracks.push({id:'music',name:'Music',kind:'music',volume:.35,muted:false});edit();}
  const videoJobs=state.jobs.filter(j=>j.projectId===p.id&&['avatar','video'].includes(j.kind));
- const signature=JSON.stringify([sectionId,clips.map(c=>({sec:c.sec,take:c.take?{id:c.take.id,outputId:c.take.outputId}:null})),p.tracks?.map(t=>t.id),p.videoTrack,podcastAudioOnly()]);if(host.dataset.signature===signature){disposeTimeline?.updateVideoJobs?.(videoJobs);return;}if(audioSession().isPlaying?.())return;host.dataset.signature=signature;
+ const signature=JSON.stringify([sectionId,clips.map(c=>({sec:c.sec,take:c.take?{id:c.take.id,outputId:c.take.outputId}:null})),p.tracks?.map(t=>t.id),p.videoTrack,audioWorkspaceOnly()]);if(host.dataset.signature===signature){disposeTimeline?.updateVideoJobs?.(videoJobs);return;}if(audioSession().isPlaying?.())return;host.dataset.signature=signature;
  const selected=clips.find(c=>c.sec.id===sectionId),preview=$('#timeline-preview'),take=selected?.take;
  if(preview.dataset.take!==(take?.outputId||'empty')){preview.dataset.take=take?.outputId||'empty';preview.innerHTML=take?`<div class="timeline-now"><span>${escape(selected.sec.title)}</span><span>${take.approved?'Approved take':'Latest take'}</span></div><${kind==='voice'?'audio':'video'} preload="metadata" aria-label="Selected section" src="${assetUrl(take.outputId)}"></${kind==='voice'?'audio':'video'}>`:'<p class="note">Your finished take will appear here.</p>';}
- disposeTimeline?.();disposeTimeline=(kind==='voice'?mountAudioTimeline:mountTimeline)({host,audioOnly:podcastAudioOnly(),videoEnabled:true,videoJobs,previewRatio:p.previewRatio,previewFit:p.previewFit,updatePreview:(ratio,fit)=>{p.previewRatio=ratio;p.previewFit=fit;edit();},importMusic:trackId=>action(()=>importTimelineMusic(trackId)),editVideo:id=>{audioSession().selectedTrackId=null;sectionId=id;clipTab='video';render();},canUndo:timelineHistory().undo.length>0,canRedo:timelineHistory().redo.length>0,undo:()=>restoreTimeline('undo'),redo:()=>restoreTimeline('redo'),split:(c,time)=>{if(!c)return;if(p.sections.length>=100){toast('Use up to 100 clips.');return;}const parts=splitClip({...c,sec:p.sections.find(s=>s.id===c.sec.id)},time,crypto.randomUUID());if(!parts)return;timelineMutation(()=>{const i=p.sections.findIndex(s=>s.id===c.sec.id);p.sections.splice(i,1,...parts);sectionId=parts[1].id;});},duplicate:c=>{if(!c||c.pending)return;if(p.sections.length>=100){toast('Use up to 100 clips.');return;}timelineMutation(()=>{const sec=structuredClone(p.sections.find(s=>s.id===c.sec.id));sec.id=crypto.randomUUID();sec.title+=' · copy';sec.audioAssetId=c.take.outputId;if(!c.sec.audioAssetId||c.sec.sourceTakeId){sec.sourceSectionId=c.sec.sourceSectionId||c.sec.id;sec.sourceTakeId=c.sec.sourceTakeId||c.take.id;}sec.trackId=c.trackId;sec.offset=c.end;p.sections.splice(p.sections.findIndex(s=>s.id===c.sec.id)+1,0,sec);sectionId=sec.id;});},remove:id=>{if(p.sections.length<=1)return;timelineMutation(()=>{p.sections=p.sections.filter(s=>s.id!==id);sectionId=p.sections[0].id;});},avatarProvider:state.settings.avatarProvider||'openrouter',enableVideo:()=>{p.videoTrack=true;edit();renderTimeline();},generateVideo:isPodcast(p)?generateSceneVideo:generateTrackVideo,viewVideoJob:id=>{sectionId=id;clipTab='video';render();$('.clip-options').open=true;$('#clip-takes').open=true;},tracks:p.tracks,session:audioSession(),report:toast,addSection:trackId=>addStudioSection(trackId),editScript:id=>{audioSession().selectedTrackId=null;sectionId=id;clipTab='script';studioTab='script';render();$('#script')?.focus();},addTrack:()=>{if(p.tracks?.length>=16){toast('Use up to 16 tracks.');return;}p.tracks=p.tracks?.length?p.tracks:[{id:'voice',name:'Voice',volume:1,muted:false}];checkpointTimeline();p.tracks.push({id:crypto.randomUUID(),name:'Track '+(p.tracks.length+1),volume:1,muted:false});edit();host.dataset.signature='';renderTimeline();},updateTrack:t=>{p.tracks=p.tracks?.length?p.tracks:[{id:'voice',name:'Voice',volume:1,muted:false}];checkpointTimeline();const i=p.tracks.findIndex(x=>x.id===t.id);if(i>=0)p.tracks[i]={...t};edit();const undo=$('[aria-label="Undo timeline edit (⌘Z)"]');if(undo)undo.disabled=false;const redo=$('[aria-label="Redo timeline edit (⇧⌘Z)"]');if(redo)redo.disabled=true;},place:(id,trackId,offset,positions,visibleTracks)=>{if(positions){if(!visibleTracks?.some(t=>t.id===trackId))return;const next=moveClipPlacement(p.sections,positions,id,trackId,offset);if(!next)return;checkpointTimeline();p.sections=next;p.tracks=structuredClone(visibleTracks);audioSession().selectedTrackId=null;sectionId=id;edit();renderKeepingTimelineViewport();}else{checkpointTimeline();const sec=p.sections.find(x=>x.id===id);sec.trackId=trackId;if(offset===null)delete sec.offset;else sec.offset=offset;edit();renderTimeline();}},selectTrack:id=>editAudioTrack(id),trackStatus:trackAudioLabel,transport:$('#timeline-transport'),exportAudio:kind==='voice'?()=>exportTimeline(clips,p):null,showShortcuts,clips,selected:sectionId,media:preview.querySelector('audio,video'),url:assetUrl,
+ disposeTimeline?.();disposeTimeline=(kind==='voice'?mountAudioTimeline:mountTimeline)({host,audioOnly:audioWorkspaceOnly(),videoEnabled:true,videoJobs,previewRatio:p.previewRatio,previewFit:p.previewFit,updatePreview:(ratio,fit)=>{p.previewRatio=ratio;p.previewFit=fit;edit();},importMusic:trackId=>action(()=>importTimelineMusic(trackId)),editVideo:id=>{audioSession().selectedTrackId=null;sectionId=id;clipTab='video';inspectorCollapsed=false;localStorage.setItem('mytwin-sidebar-collapsed','0');render();$('#clip-tab-video')?.focus({preventScroll:true});},canUndo:timelineHistory().undo.length>0,canRedo:timelineHistory().redo.length>0,undo:()=>restoreTimeline('undo'),redo:()=>restoreTimeline('redo'),split:(c,time)=>{if(!c)return;if(p.sections.length>=100){toast('Use up to 100 clips.');return;}const parts=splitClip({...c,sec:p.sections.find(s=>s.id===c.sec.id)},time,crypto.randomUUID());if(!parts)return;timelineMutation(()=>{const i=p.sections.findIndex(s=>s.id===c.sec.id);p.sections.splice(i,1,...parts);sectionId=parts[1].id;});},duplicate:c=>{if(!c||c.pending)return;if(p.sections.length>=100){toast('Use up to 100 clips.');return;}timelineMutation(()=>{const sec=structuredClone(p.sections.find(s=>s.id===c.sec.id));sec.id=crypto.randomUUID();sec.title+=' · copy';sec.audioAssetId=c.take.outputId;if(!c.sec.audioAssetId||c.sec.sourceTakeId){sec.sourceSectionId=c.sec.sourceSectionId||c.sec.id;sec.sourceTakeId=c.sec.sourceTakeId||c.take.id;}sec.trackId=c.trackId;sec.offset=c.end;p.sections.splice(p.sections.findIndex(s=>s.id===c.sec.id)+1,0,sec);sectionId=sec.id;});},remove:id=>{if(p.sections.length<=1)return;timelineMutation(()=>{p.sections=p.sections.filter(s=>s.id!==id);sectionId=p.sections[0].id;});},avatarProvider:state.settings.avatarProvider||'openrouter',enableVideo:()=>{p.videoTrack=true;edit();renderTimeline();},generateVideo:isPodcast(p)?generateSceneVideo:generateTrackVideo,viewVideoJob:id=>{sectionId=id;clipTab='video';render();$('.clip-options').open=true;$('#clip-takes').open=true;},tracks:p.tracks,session:audioSession(),report:toast,addSection:trackId=>{
+  const chapter=isAudiobook(p)&&audiobookChapters(p).find(ch=>ch.id===audiobookChapterId(section()));
+  if(chapter)action(()=>addAudiobookDialogue(p,chapter,[{speakerId:trackId,text:''}]));
+  else addStudioSection(trackId);
+ },editScript:id=>{audioSession().selectedTrackId=null;sectionId=id;clipTab='script';studioTab='script';render();$('#script')?.focus();},addTrack:()=>{if(p.tracks?.length>=16){toast('Use up to 16 tracks.');return;}p.tracks=p.tracks?.length?p.tracks:[{id:'voice',name:'Voice',volume:1,muted:false}];checkpointTimeline();p.tracks.push({id:crypto.randomUUID(),name:'Track '+(p.tracks.length+1),volume:1,muted:false});edit();host.dataset.signature='';renderTimeline();},updateTrack:t=>{p.tracks=p.tracks?.length?p.tracks:[{id:'voice',name:'Voice',volume:1,muted:false}];checkpointTimeline();const i=p.tracks.findIndex(x=>x.id===t.id);if(i>=0)p.tracks[i]={...t};edit();const undo=$('[aria-label="Undo timeline edit (⌘Z)"]');if(undo)undo.disabled=false;const redo=$('[aria-label="Redo timeline edit (⇧⌘Z)"]');if(redo)redo.disabled=true;},place:(id,trackId,offset,positions,visibleTracks)=>{if(positions){if(!visibleTracks?.some(t=>t.id===trackId))return;const next=moveClipPlacement(p.sections,positions,id,trackId,offset);if(!next)return;checkpointTimeline();p.sections=next;p.tracks=structuredClone(visibleTracks);audioSession().selectedTrackId=null;sectionId=id;edit();renderKeepingTimelineViewport();}else{checkpointTimeline();const sec=p.sections.find(x=>x.id===id);sec.trackId=trackId;if(offset===null)delete sec.offset;else sec.offset=offset;edit();renderTimeline();}},selectTrack:id=>editAudioTrack(id),trackStatus:trackAudioLabel,transport:$('#timeline-transport'),exportAudio:kind==='voice'?()=>exportTimeline(clips,p):null,exportVideo:()=>exportTimelineVideo(clips,p),showShortcuts,clips,selected:sectionId,media:preview.querySelector('audio,video'),url:assetUrl,
  select:(id,time)=>action(async()=>{await save();audioSession().selectedTrackId=null;sectionId=id;render();const player=$('#timeline-preview audio,#timeline-preview video');if(player&&time!==undefined){const seek=()=>player.currentTime=time;if(player.readyState)seek();else player.addEventListener('loadedmetadata',seek,{once:true});}}),
  change:(id,output,range)=>{checkpointTimeline();const sec=p.sections.find(s=>s.id===id);sec.trims={...sec.trims,[output]:{...range}};edit();renderTimeline();},
  reorder:(from,to)=>{checkpointTimeline();p.sections=moveClip(p.sections,from,to);for(const sec of p.sections.filter(x=>x.id===from||x.id===to))delete sec.offset;edit();render();}
  });
 }
-function renderLibrary(){mountLibrary(content,{state,assetUrl});}
-function renderTwins(){mountTwins(content,{state,assetUrl,onCreate:()=>createTwin(),onEdit:profile=>createTwin(profile)});}
+function bindCollectionActions(){
+ bindCollectionMenus(content);
+ content.querySelectorAll('[data-collection-action]').forEach(button=>button.onclick=()=>action(async()=>{
+  const {collection,itemId,collectionAction:operation}=button.dataset,item=state[collection].find(x=>x.id===itemId);
+  if(!item)return;
+  button.closest('[popover]')?.hidePopover();
+  const kind=collection==='projects'?'project':'model';
+  const perform=async()=>{
+   await save();
+   await api('/'+collection+'/'+itemId+(operation==='duplicate'?'/duplicate':''),operation==='duplicate'?'POST':'DELETE');
+   if(operation==='delete'&&collection==='projects'&&projectId===itemId){audioSession().pause?.();projectId=null;sectionId=null;returnToProject=false;view='library';localStorage.removeItem('mytwin-project');}
+   await refresh();render();toast(operation==='duplicate'?'Copy created.':`${kind==='project'?'Project':'Model'} deleted.`);
+  };
+  if(operation==='duplicate'){button.disabled=true;try{await perform();}finally{button.disabled=false;}return;}
+  showDialog(`<div class="dialog-head"><h2>Delete ${kind}?</h2><button data-close aria-label="Close">✕</button></div><p>Delete <strong>${escape(item.title||item.name)}</strong>? This cannot be undone.</p><p class="note">${kind==='project'?'The project and its saved drafts will be removed. Media files and spending history will be kept.':'The model will be removed from My Models. Media files and completed takes will be kept. Models assigned to a project must be replaced there first.'}</p><div class="dialog-actions"><button data-close autofocus>Cancel</button><button id="confirm-collection-delete" class="danger-action">Delete ${kind}</button></div><p id="collection-delete-error" class="error" role="alert"></p>`);
+  const confirm=$('#confirm-collection-delete');confirm.onclick=async()=>{confirm.disabled=true;try{await perform();closeDialog();}catch(e){$('#collection-delete-error').textContent=e.message||String(e);confirm.disabled=false;}};
+ }));
+}
+function renderLibrary(){mountLibrary(content,{state,assetUrl});bindCollectionActions();}
+function renderTwins(){mountTwins(content,{state,assetUrl,onCreate:()=>createTwin(),onEdit:profile=>createTwin(profile)});bindCollectionActions();}
 function createTwin(existing){
  showDialog('');$('#dialog').classList.add('twin-editor-dialog');
- const dispose=mountTwinEditor($('#dialog-content'),{existing,getState:()=>state,api,refresh,assetUrl,loadStatus:loadLocalStatus,importMedia:native?kind=>invoke('import_media',{kind}):null,upload,storeRecording:async file=>{if(!native)return upload(file);const bytes=new Uint8Array(await file.arrayBuffer());let encoded='';for(let i=0;i<bytes.length;i+=16384)encoded+=String.fromCharCode(...bytes.subarray(i,i+16384));return invoke('save_recording',{data:btoa(encoded)});},onClose:closeDialog,onSave:async twin=>{
-  if(current()&&!profileIdFor(current(),section())&&(!isPodcast(current())||speakerFor(current(),section()))){if(isPodcast(current()))speakerFor(current(),section()).profileId=twin.id;else current().profileId=twin.id;edit();await save();}await refresh();closeDialog();render();toast('Twin saved.');
+ const dispose=mountTwinEditor($('#dialog-content'),{existing,backLabel:view==='twin'?'My Models':current()?.title||'Project',getState:()=>state,api,refresh,assetUrl,loadStatus:loadLocalStatus,importMedia:native?kind=>invoke('import_media',{kind}):null,upload,storeRecording:async file=>{if(!native)return upload(file);const bytes=new Uint8Array(await file.arrayBuffer());let encoded='';for(let i=0;i<bytes.length;i+=16384)encoded+=String.fromCharCode(...bytes.subarray(i,i+16384));return invoke('save_recording',{data:btoa(encoded)});},onClose:closeDialog,onSave:async twin=>{
+  if(current()&&!profileIdFor(current(),section())&&(!isPodcast(current())||speakerFor(current(),section()))){if(isPodcast(current()))speakerFor(current(),section()).profileId=twin.id;else current().profileId=twin.id;edit();await save();}await refresh();closeDialog();render();toast('Model saved.');
  }});
  twinCleanup=()=>{dispose();$('#dialog').classList.remove('twin-editor-dialog');};
 }
 async function upload(file){if(!file)return null;if(file.size>512*1024*1024)throw new Error('Maximum file size is 512 MB.');const res=await fetch('/api/assets',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});const data=await res.json();if(!res.ok)throw new Error(data.error);return data;}
-let queueFilter='all';
 function updateGlobalQueue(){
  if(!state)return;const all=queueGroups(state.jobs),count=all.active.length+all.waiting.length;
  const nav=$('[data-view="queue"]');if(nav){nav.classList.toggle('queue-working',all.active.length>0);nav.setAttribute('aria-label',`Queue, ${all.active.length} active, ${all.waiting.length} waiting`);nav.dataset.tooltip='Queue'+(count?' · '+count+' jobs':'');let badge=nav.querySelector('.queue-count');if(!badge){badge=document.createElement('b');badge.className='queue-count';nav.append(badge);}badge.textContent=count;badge.hidden=!count;}
- let quick=$('#global-queue-button');if($('.clip-project')&&!quick){quick=document.createElement('button');quick.id='global-queue-button';quick.onclick=openGlobalQueue;$('.clip-project').append(quick);}if(quick){quick.textContent='Queue'+(count?' · '+count:'');quick.classList.toggle('is-rendering',all.active.length>0);}
 }
 function openGlobalQueue(){return action(()=>navigate('queue'));}
 function stableContent(host,html){
@@ -510,27 +841,23 @@ function stableContent(host,html){
  }
  for(const node of existing)node.remove();
 }
-function queueTake(job){
- return takeCard(job).replace(/<(audio|video)\b[^>]*>[\s\S]*?<\/\1>/g,(media,kind)=>`<details class="queue-output"><summary>Preview ${kind}</summary>${media.replace('preload="metadata"','preload="none"')}</details>`);
-}
 function renderQueue(){
- const groups=queueGroups(state.jobs.filter(j=>!j.parentVideoId),queueFilter);
- const sections=[['active','In progress'],['waiting','Waiting'],['history','History']];
- stableContent(content,`<div class="queue-page"><div class="queue-page-toolbar"><div class="queue-filters" role="group" aria-label="Job type">${['all','audio','video'].map(k=>`<button data-queue-page-filter="${k}" aria-pressed="${queueFilter===k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div><p class="queue-page-summary" role="status">${groups.active.length} active · ${groups.waiting.length} waiting · ${groups.history.length} in history</p><button id="refresh-queue">Refresh</button></div><div class="queue-page-scroll">${sections.map(([key,label])=>groups[key].length?`<section class="queue-page-group" aria-labelledby="queue-${key}-heading"><h2 id="queue-${key}-heading">${label}<span>${groups[key].length}</span></h2>${groups[key].map(j=>`<div class="queue-page-item"><button class="queue-thumbnail" data-queue-clip="${escape(j.id)}" aria-label="Open ${escape(j.sectionTitle||'clip')}">${artwork(projectArtwork(state.projects.find(p=>p.id===j.projectId),state,j),{assetUrl,title:j.projectTitle,kind:j.kind==='voice'?'audio':'video',compact:true})}</button><div class="queue-item-detail"><button class="queue-project-link" data-queue-clip="${escape(j.id)}">${escape(j.projectTitle||'Untitled project')}</button>${queueTake(j)}</div></div>`).join('')}</section>`:'').join('')||`<div class="queue-page-empty">${icon('queue')}<h2>${queueFilter==='all'?'Your queue is empty':'No '+queueFilter+' jobs'}</h2><p>Generation jobs appear here when you create audio or video in Studio.</p><button data-view="studio">Go to Studio</button></div>`}</div></div>`);
- bindArtwork(content);
- $('#refresh-queue').onclick=()=>action(async()=>{await refresh();renderQueue();});
- for(const button of content.querySelectorAll('[data-queue-page-filter]'))button.onclick=()=>{queueFilter=button.dataset.queuePageFilter;renderQueue();};
+ if(!queueWorkspace)queueWorkspace=mountQueue(content,{getState:()=>state,assetUrl,preferences:queuePreferences,refresh:()=>action(async()=>{await refresh();queueWorkspace?.update();})});
+ else queueWorkspace.update();
 }
-function renderSettings(){mountSettings(content,{settings:state.settings,getSettings:()=>state.settings,modelPicker,initModelPickers,closeModelPicker,renderLocalSettings,api,refresh,loadModels,navigate:next=>action(()=>navigate(next)),connection});}
+function renderSettings(){mountSettings(content,{settings:state.settings,getSettings:()=>state.settings,modelPicker,initModelPickers,closeModelPicker,renderLocalSettings,api,refresh,loadModels,navigate:next=>action(()=>navigate(next)),connection,updates,openExternal:url=>native?invoke('open_external_url',{url}):window.open(url,'_blank','noopener,noreferrer')});}
 function renderSpending(){mountSpending(content,spendingJobs,{refresh:()=>action(async()=>{await refresh();if(view==='spending')renderSpending();}),exportCsv:csv=>action(async()=>{
  if(native){if(await invoke('export_spending',{csv}))toast('Spending record exported.');return;}
- const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='fikr-vox-spending.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
+ const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='mytwin-spending.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
 })});}
 async function write(actionName,button){await save();const target=section(),project=current(),original=target.text;button.disabled=true;button.textContent='Working…';try{const result=await api('/write','POST',{action:actionName,text:original});showDialog(`<div class="dialog-head"><h2>Review your ${actionName==='draft'?'draft':'revision'}</h2><button data-close class="subtle">✕</button></div><label>Suggested narration<textarea id="suggestion-text">${escape(result.text)}</textarea></label><div class="dialog-actions"><button data-close>Discard</button><button class="primary" id="apply-suggestion">Apply revision</button></div>`);$('#apply-suggestion').onclick=()=>action(async()=>{if(target.text!==original)throw new Error('The script changed while generating. Copy the suggestion before closing.');target.previousText=original;target.text=$('#suggestion-text').value;projectId=project.id;sectionId=target.id;edit();await save();closeDialog();render();toast('Revision applied.');});}finally{button.disabled=false;button.textContent=actionName[0].toUpperCase()+actionName.slice(1);}}
 async function action(fn){try{await fn();}catch(e){toast(e.message||String(e));}}
-document.addEventListener('click',e=>{const link=e.target.closest('[data-export]');if(link&&native){e.preventDefault();return action(async()=>{if(await invoke('export_media',{assetId:link.dataset.export}))toast('File saved.');});}const b=e.target.closest('button');if(!b)return;if(b.dataset.pick)return action(async()=>{const a=await invoke('import_media',{kind:b.dataset.pick==='voice'?'audio':'avatar'});if(a){nativeRefs[b.dataset.pick]=a;b.textContent=a.name;}});if(b.hasAttribute('data-close'))return closeDialog();if(b.dataset.view==='queue')return openGlobalQueue();if(b.dataset.queueClip)return action(async()=>{const j=state.jobs.find(j=>j.id===b.dataset.queueClip);if(!j)return;await save();projectId=j.projectId;sectionId=j.sectionId;clipTab=j.kind==='voice'?'audio':'video';view='studio';render();});if(b.dataset.view)return action(()=>navigate(b.dataset.view));if(b.hasAttribute('data-new'))return action(newProject);if(b.hasAttribute('data-open-project'))return action(openProject);if(b.dataset.project)return action(async()=>{await save();projectId=b.dataset.project;sectionId=null;localStorage.setItem('mytwin-project',projectId);view='studio';render();});if(b.dataset.mode){current().mode=b.dataset.mode;edit();render();}if(b.dataset.section){sectionId=b.dataset.section;render();}if(b.hasAttribute('data-add-section'))return addStudioSection();if(b.hasAttribute('data-remove-section')){showDialog(`<h2>Remove this section?</h2><p>Existing takes will be kept.</p><div class="dialog-actions"><button data-close>Keep section</button><button class="primary" id="confirm-remove">Remove section</button></div>`);$('#confirm-remove').onclick=()=>{current().sections=current().sections.filter(s=>s.id!==sectionId);sectionId=current().sections[0].id;edit();closeDialog();render();};}if(b.hasAttribute('data-rename'))return action(renameProject);if(b.hasAttribute('data-undo')){section().text=section().previousText;delete section().previousText;edit();render();}if(b.dataset.write)return action(()=>write(b.dataset.write,b));if(b.dataset.dubFrom)return action(()=>dubExistingVideo(b.dataset.dubFrom));if(b.dataset.avatarFrom){const take=state.jobs.find(j=>j.id===b.dataset.avatarFrom),p=state.projects.find(p=>p.id===take?.projectId),sec=p?.sections.find(s=>s.id===take?.sectionId);if(take&&sec){projectId=p.id;sectionId=sec.id;return generateTrackVideo({take,sec});}}if(b.dataset.useVideo)return action(async()=>{const job=state.jobs.find(j=>j.id===b.dataset.useVideo);if(!job)return;b.disabled=true;try{await selectClipVideoTake(current(),job);await refresh();renderTakes();toast('Video take updated.');}finally{b.disabled=false;}});if(b.dataset.job)return action(async()=>{b.disabled=true;try{await api('/jobs/'+b.dataset.job+'/'+b.dataset.jobAction,'POST');if(b.dataset.jobAction==='approve'){const job=state.jobs.find(j=>j.id===b.dataset.job);if(job?.kind==='voice')await selectClipVoiceTake(state.projects.find(p=>p.id===job.projectId),job);}await refresh();if(view==='queue')renderQueue();else renderTakes();}finally{b.disabled=false;}});});
+document.addEventListener('click',e=>{const link=e.target.closest('[data-export]');if(link&&native){e.preventDefault();return action(async()=>{if(await invoke('export_media',{assetId:link.dataset.export}))toast('File saved.');});}const b=e.target.closest('button');if(!b)return;if(b.dataset.pick)return action(async()=>{const a=await invoke('import_media',{kind:b.dataset.pick==='voice'?'audio':'avatar'});if(a){nativeRefs[b.dataset.pick]=a;b.textContent=a.name;}});if(b.hasAttribute('data-close'))return closeDialog();if(b.dataset.view==='queue')return openGlobalQueue();if(b.dataset.queueClip)return action(async()=>{const j=state.jobs.find(j=>j.id===b.dataset.queueClip);if(!j)return;await save();projectId=j.projectId;localStorage.setItem('mytwin-project',projectId);sectionId=j.sectionId;clipTab=j.kind==='voice'?'audio':'video';if(isPodcast(current())){if(j.kind==='voice')podcastVideoViews.delete(projectId);else podcastVideoViews.add(projectId);}view='studio';render();});if(b.dataset.view)return action(()=>navigate(b.dataset.view));if(b.hasAttribute('data-new'))return action(newProject);if(b.hasAttribute('data-open-project'))return action(openProject);if(b.dataset.project)return action(async()=>{await save();projectId=b.dataset.project;sectionId=null;clipTab='script';localStorage.setItem('mytwin-project',projectId);view='studio';render();});if(b.dataset.mode){current().mode=b.dataset.mode;edit();render();}if(b.dataset.section){sectionId=b.dataset.section;render();}if(b.hasAttribute('data-add-section'))return addStudioSection();if(b.hasAttribute('data-remove-section')){showDialog(`<h2>Remove this section?</h2><p>Existing takes will be kept.</p><div class="dialog-actions"><button data-close>Keep section</button><button class="primary" id="confirm-remove">Remove section</button></div>`);$('#confirm-remove').onclick=()=>{current().sections=current().sections.filter(s=>s.id!==sectionId);sectionId=current().sections[0].id;edit();closeDialog();render();};}if(b.hasAttribute('data-rename'))return action(renameProject);if(b.hasAttribute('data-undo')){section().text=section().previousText;delete section().previousText;edit();render();}if(b.dataset.textTool)return action(()=>textTool(b.dataset.textTool));if(b.dataset.write)return action(()=>write(b.dataset.write,b));if(b.dataset.dubFrom)return action(()=>dubExistingVideo(b.dataset.dubFrom));if(b.dataset.avatarFrom){const take=state.jobs.find(j=>j.id===b.dataset.avatarFrom),p=state.projects.find(p=>p.id===take?.projectId),sec=p?.sections.find(s=>s.id===take?.sectionId);if(take&&sec){projectId=p.id;sectionId=sec.id;return generateTrackVideo({take,sec});}}if(b.dataset.useVideo)return action(async()=>{const job=state.jobs.find(j=>j.id===b.dataset.useVideo);if(!job)return;b.disabled=true;try{await selectClipVideoTake(current(),job);await refresh();renderTakes();toast('Video take updated.');}finally{b.disabled=false;}});if(b.dataset.job)return action(async()=>{b.disabled=true;try{await api('/jobs/'+b.dataset.job+'/'+b.dataset.jobAction,'POST');if(b.dataset.jobAction==='approve'){const job=state.jobs.find(j=>j.id===b.dataset.job);if(job?.kind==='voice')await selectClipVoiceTake(state.projects.find(p=>p.id===job.projectId),job);}await refresh();if(view==='queue')renderQueue();else renderTakes();}finally{b.disabled=false;}});});
+$('.brand').onclick=event=>{event.preventDefault();void action(()=>navigate('library'));};
+$('#return-to-project').onclick=()=>action(()=>navigate('studio'));
 $('#connection').onclick=()=>action(()=>navigate('settings'));
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+updates?.start();
 if(native)await window.__TAURI__.event.listen('studio-menu',event=>{void action(()=>nativeMenuAction(event.payload));});
 await action(async()=>{await refresh();render();if(state.settings.workerUrl)void action(async()=>{try{await api('/worker/check','POST');}catch{}await refresh();});});
 let polling=false;
@@ -549,4 +876,10 @@ async function dubExistingVideo(id){
  p.profileId=job.profileId||'';p.sections[0].text=job.kind==='video'&&!job.sourceJobId?'':job.text;
  p.dubbing={source:'generate',videoAssetId:asset.id,prompt:job.prompt||'',start:0,timing:'natural'};
  await api('/projects/'+p.id,'PUT',p);await refresh();projectId=p.id;sectionId=p.sections[0].id;localStorage.setItem('mytwin-project',p.id);view='studio';render();
+}
+
+async function textTool(kind){
+ await save();const target=section(),project=current(),original=target.text;showDialog('');
+ const chooseAudio=async()=>{if(native)return invoke('import_media',{kind:'audio'});return new Promise(resolve=>{const input=document.createElement('input');input.type='file';input.accept='audio/*';input.onchange=async()=>{try{resolve(input.files[0]?await upload(input.files[0]):null);}catch(e){toast(e.message);resolve(null);}};input.oncancel=()=>resolve(null);input.click();});};
+ await mountTextTool($('#dialog-content'),{kind,api,settings:state.settings,profile:state.profiles.find(p=>p.id===profileIdFor(project,target)),text:original,language:project.language,chooseAudio,onClose:closeDialog,onApply:async value=>{if(target.text!==original)throw Error('The script changed. Copy this result before closing.');target.previousText=original;target.text=value;edit();await save();closeDialog();render();toast(kind==='translate'?'Translation applied. Choose the matching voice language before generating.':'Transcript applied.');}});
 }

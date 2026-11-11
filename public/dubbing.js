@@ -1,3 +1,7 @@
+import {modelTranscription,validateModelTranscription} from './model-transcription.js';
+import {currentVideoProvider,videoProviderChoices,videoProviderModels,defaultVideoModel} from './video-providers.js';
+import {collectionMenu} from './collection-menu.js';
+import {twinLanguages} from './twin-models.js';
 import {defaultDubbing,dubbingVoiceRequest,currentDubVoice,dubMatches} from './dubbing-model.js';
 
 // One workspace and renderer for uploaded footage and generated footage.
@@ -5,10 +9,10 @@ export function mountDubbing(host,ctx) {
   const {project:p,getState,api,assetUrl,escape:e,options,edit,save,refresh,action,chooseVideo,editTwin,stableContent}=ctx;
   p.dubbing ||= defaultDubbing();
   const d=p.dubbing,sec=p.sections[0];
-  let alive=true,busy=false,sourceVersion=0,metadata=null,inspected='',videoModel='',transcript=null,existingOptions='',transcribing=false;
+  let alive=true,busy=false,sourceVersion=0,metadata=null,inspected='',videoProvider=currentVideoProvider(getState().settings),videoModel=defaultVideoModel(getState().settings),transcript=null,existingOptions='',transcribing=false;
   const $=s=>host.querySelector(s);
   host.innerHTML=`<div class="dubbing-studio">
-    <header class="dub-header"><div><span class="eyebrow">Fikr Vox</span><h2>${e(p.title)}</h2><p>Video Dubbing · Your video, your voice</p></div><div class="dub-header-actions"><span id="save-state">Saved</span><button data-rename>Rename</button><button data-open-project>Open</button><button data-new>New project</button></div></header>
+    <header class="dub-header"><div class="dub-project-breadcrumb"><button type="button" class="project-library-back" data-view="library" aria-label="Back to Library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>Library</button><span class="project-breadcrumb-divider" aria-hidden="true">/</span><h2>${e(p.title)}</h2></div><div class="dub-header-actions"><span id="save-state">Saved</span>${collectionMenu('projects',p,{rename:true})}</div></header>
     <div class="dub-layout"><div class="dub-canvas">
       <section class="dub-preview-card"><div class="dub-card-heading"><h3>Source video</h3><span id="dub-source-meta" role="status">Choose a video to begin</span></div><div id="dub-source-preview" class="dub-monitor"></div></section>
       <section class="dub-preview-card"><div class="dub-card-heading"><h3>Dubbed preview</h3><span id="dub-result-status" role="status" aria-live="polite"></span></div><div id="dub-output" class="dub-monitor"></div><div id="dub-export"></div></section>
@@ -17,12 +21,12 @@ export function mountDubbing(host,ctx) {
       <section class="dub-step"><h3><span>1</span> Choose your video</h3>
         <div class="dub-source-tabs" role="group" aria-label="Video source"><button id="dub-upload-tab">Upload video</button><button id="dub-generate-tab">Generate video</button></div>
         <div id="dub-upload-panel"><button class="dub-upload" id="dub-upload">↑ <strong>Choose a video</strong><small>MP4, MOV or WebM · Up to 512 MB</small></button><p class="note">H.264 MP4 and MOV work best. Processing support depends on the video codec.</p></div>
-        <div id="dub-generate-panel" hidden><label>Describe the visuals<textarea id="dub-prompt" maxlength="10000" placeholder="A slow camera move through a sunlit forest…">${e(d.prompt)}</textarea></label><div id="dub-video-controls"></div><p class="note">Generate sends this prompt to OpenRouter and uses credits. The clip becomes the source for your dub.</p><button id="dub-generate-video" class="primary">Generate video</button><div id="dub-video-jobs" role="status"></div></div>
+        <div id="dub-generate-panel" hidden><label>Describe the visuals<textarea id="dub-prompt" maxlength="10000" placeholder="A slow camera move through a sunlit forest…">${e(d.prompt)}</textarea></label><div id="dub-video-controls"></div><p class="note">Generate sends this prompt to your selected provider and uses provider credits. The clip becomes the source for your dub.</p><button id="dub-generate-video" class="primary">Generate video</button><div id="dub-video-jobs" role="status"></div></div>
         <label class="dub-existing-label">Or use a saved video<select id="dub-existing"><option value="">Choose a saved video…</option></select></label>
       </section>
       <section class="dub-step"><h3><span>2</span> Give your twin the words</h3>
-        <label>Voice twin<select id="dub-twin">${options([['','Choose your twin'],...getState().profiles.map(t=>[t.id,t.name])],p.profileId)}</select></label><button id="dub-edit-twin" class="small subtle">Edit twin & voice settings</button><p id="dub-voice-settings" class="note"></p>
-        <label>Language<select id="dub-language">${options([['en','English'],['ar','Arabic'],['hi','Hindi'],['ml','Malayalam'],['es','Spanish'],['fr','French'],['de','German'],['pt','Portuguese'],['it','Italian'],['zh','Chinese'],['ja','Japanese'],['ko','Korean'],['ru','Russian']],p.language)}</select></label>
+        <label>Voice twin<select id="dub-twin">${options([['','Choose your twin'],...getState().profiles.map(t=>[t.id,t.name])],p.profileId)}</select></label><div class="studio-model-select"><button id="dub-edit-twin" class="small subtle">Edit twin & voice settings</button><div id="dub-model-actions">${collectionMenu('profiles',getState().profiles.find(t=>t.id===p.profileId))}</div></div><p id="dub-voice-settings" class="note"></p>
+        <label>Language<select id="dub-language">${options(twinLanguages,p.language)}</select></label>
         <label>Script<textarea id="dub-script" maxlength="50000" placeholder="Write or paste the words your twin should say…">${e(sec.text)}</textarea></label>
         <button id="dub-transcribe" class="small">Transcribe source video</button><p class="note" id="dub-transcribe-note">Optional: transcription sends extracted audio to your selected OpenRouter transcription model. Review the text before applying it.</p>
         <div id="dub-transcript-review" hidden><label>Review transcript<textarea id="dub-transcript"></textarea></label><button id="dub-apply-transcript">Use transcript</button><button id="dub-discard-transcript" class="subtle">Discard</button></div>
@@ -50,15 +54,15 @@ export function mountDubbing(host,ctx) {
   $('#dub-existing').onchange=event=>run(()=>useVideo(event.target.value));
   $('#dub-prompt').oninput=event=>{d.prompt=event.target.value;edit();update();};
   $('#dub-script').oninput=event=>{sec.text=event.target.value;edit();update();};
-  $('#dub-twin').onchange=event=>{p.profileId=event.target.value;edit();update();};
+  $('#dub-twin').onchange=event=>{p.profileId=event.target.value;edit();$('#dub-model-actions').innerHTML=collectionMenu('profiles',getState().profiles.find(t=>t.id===p.profileId));ctx.bindCollectionActions?.();update();};
   $('#dub-language').onchange=event=>{p.language=event.target.value;edit();update();};
   $('#dub-edit-twin').onclick=()=>editTwin(getState().profiles.find(t=>t.id===p.profileId));
   $('#dub-start').oninput=event=>{d.start=event.target.valueAsNumber;edit();update();};
   $('#dub-timing').onchange=event=>{d.timing=event.target.value;edit();update();};
   $('#dub-transcribe').onclick=()=>run(async()=>{
     const original=sec.text,source=d.videoAssetId;transcribing=true;update();
-    try {const a=await api('/dubbing/extract','POST',{assetId:source});
-    const result=await api('/listen','POST',{assetId:a.id});
+    try {const state=getState(),profile=state.profiles.find(t=>t.id===p.profileId);if(!profile)throw Error('Choose a model and configure transcription in My Models.');const transcription=validateModelTranscription(modelTranscription(profile,state.settings));const a=await api('/dubbing/extract','POST',{assetId:source});
+    const result=await api('/listen','POST',{...transcription,assetId:a.id});
     if(!alive)return;
     transcript={text:result.text,original,source};$('#dub-transcript').value=result.text;$('#dub-transcript-review').hidden=false;}finally{transcribing=false;}
   });
@@ -72,15 +76,16 @@ export function mountDubbing(host,ctx) {
   });
   $('#dub-generate-video').onclick=()=>run(async()=>{
     await save();const video={};for(const key of ['duration','resolution','aspect_ratio']){const v=$('#dub-video-'+key).value;if(v)video[key]=key==='duration'?Number(v):v;}
-    const job=await api('/jobs','POST',{projectId:p.id,sectionId:sec.id,kind:'video',provider:'openrouter',engine:videoModel,video});
+    const job=await api('/jobs','POST',{projectId:p.id,sectionId:sec.id,kind:'video',provider:videoProvider,engine:videoModel,video});
     await api('/jobs/'+job.id+'/submit','POST');await refresh();
   });
   $('#dub-render').onclick=()=>run(async()=>{await save();const voice=currentDubVoice(getState(),p);if(!voice)throw Error('Generate a current twin voice first.');await api('/dubbing/render','POST',{projectId:p.id,voiceJobId:voice.id});await refresh();});
   function videoControls(){
-    const models=getState().settings.videoModels||[],model=models.find(m=>m.id===videoModel);
-    $('#dub-video-controls').innerHTML=`<label>Video model<select id="dub-video-model">${options([['','Choose a model'],...models.filter(m=>m.supported_durations?.length).map(m=>[m.id,m.name||m.id])],videoModel)}</select></label><button id="dub-refresh-models" class="small">Refresh video models</button><div class="fields">${[['duration','supported_durations','Seconds'],['resolution','supported_resolutions','Resolution'],['aspect_ratio','supported_aspect_ratios','Aspect ratio']].map(([key,field,label])=>`<label>${label}<select id="dub-video-${key}">${options([['','Model default'],...(model?.[field]||[]).map(v=>[String(v),String(v)])],'')}</select></label>`).join('')}</div>`;
+    const models=videoProviderModels(getState().settings,videoProvider),model=models.find(m=>m.id===videoModel);
+    $('#dub-video-controls').innerHTML=`<label>Video provider<select id="dub-video-provider">${options(videoProviderChoices(getState().settings),videoProvider)}</select></label><label>Video model<select id="dub-video-model">${options([['','Choose a model'],...models.filter(m=>m.supported_durations?.length).map(m=>[m.id,m.name||m.id])],videoModel)}</select></label>${videoProvider==='openrouter'?'<button id="dub-refresh-models" class="small">Refresh video models</button>':''}<div class="fields">${[['duration','supported_durations','Seconds'],['resolution','supported_resolutions','Resolution'],['aspect_ratio','supported_aspect_ratios','Aspect ratio']].map(([key,field,label])=>`<label>${label}<select id="dub-video-${key}">${options([['','Model default'],...(model?.[field]||[]).map(v=>[String(v),String(v)])],'')}</select></label>`).join('')}</div>`;
+    $('#dub-video-provider').onchange=event=>{videoProvider=event.target.value;videoModel=defaultVideoModel(getState().settings,videoProvider);videoControls();update();};
     $('#dub-video-model').onchange=event=>{videoModel=event.target.value;videoControls();update();};
-    $('#dub-refresh-models').onclick=()=>run(async()=>{getState().settings.videoModels=await api('/openrouter/video-models');if(alive)videoControls();});
+    if($('#dub-refresh-models'))$('#dub-refresh-models').onclick=()=>run(async()=>{getState().settings.videoModels=await api('/openrouter/video-models');if(alive)videoControls();});
   }
   function update(){
     if(!alive)return;
@@ -96,9 +101,10 @@ export function mountDubbing(host,ctx) {
     $('#dub-generate-voice').textContent=voiceBusy?'Generating twin voice…':voice?'Twin voice ready':'Generate twin voice';
     $('#dub-generate-video').disabled=busy||videoBusy||!videoModel||!d.prompt.trim();
     $('#dub-generate-video').textContent=videoBusy?'Generating video…':'Generate video';
-    $('#dub-transcribe').disabled=busy||!source||!metadata?.hasAudio||!state.settings.listeningModel||!state.settings.openrouterConfigured;
+    const transcriptionProfile=state.profiles.find(t=>t.id===p.profileId),transcription=modelTranscription(transcriptionProfile,state.settings);
+    $('#dub-transcribe').disabled=busy||!source||!metadata?.hasAudio||!transcriptionProfile||!transcription.model||(transcription.provider==='openrouter'&&!state.settings.openrouterConfigured);
     $('#dub-transcribe').textContent=transcribing?'Transcribing source audio…':'Transcribe source video';
-    $('#dub-transcribe-note').textContent=transcribing?'Extracting the source audio and transcribing it. You can review the text before applying it.':!source?'Choose a video to transcribe, or write your script above.':metadata&&!metadata.hasAudio?'This source has no readable audio. Write or paste your script above.':!state.settings.listeningModel||!state.settings.openrouterConfigured?'Choose an Audio text model and connect OpenRouter in Settings to transcribe this video. You can also write or paste your script.':'Optional: transcription sends extracted audio to your selected OpenRouter model and uses credits. Review the text before applying it.';
+    $('#dub-transcribe-note').textContent=!transcriptionProfile?'Choose a model first. Configure transcription in My Models.':transcription.provider==='local'?`Uses ${transcription.model} from ${transcriptionProfile.name}. Runs on this Mac. Review before applying.`:`Uses the transcription provider and model saved in ${transcriptionProfile.name}. Sends audio to that provider and uses credits.`;
     $('#dub-upload').disabled=busy;$('#dub-existing').disabled=busy;
     const available=metadata?.duration-d.start,tooLong=voice?.duration>available+0.02;
     $('#dub-render').disabled=busy||renderBusy||!voice||!metadata?.duration||!Number.isFinite(d.start)||d.start<0||available<=0||(d.timing==='natural'&&tooLong);

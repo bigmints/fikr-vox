@@ -1,0 +1,93 @@
+name: Release Fikr Vox for macOS
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'bigmints/fikr-vox'
+    runs-on: macos-26
+    timeout-minutes: 90
+    environment: desktop-release
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Validate release tag
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$GITHUB_REF_NAME" = "v$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          test "$(uname -m)" = arm64
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.7'
+          enable-cache: false
+      - name: Install build dependencies
+        run: |
+          brew install minisign
+          npm ci
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
+      - name: Sign, notarize, and verify artifacts
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          CARGO_NET_OFFLINE: 'true'
+        run: bash scripts/package-macos-release.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-macos-release
+          path: ${{ runner.temp }}/vox-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-macos-release
+          path: release
+      - name: Publish verified assets to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Never replace a published stable release with an older tag.
+          gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+            --limit 100 --json tagName > releases.json
+          python3 - <<'PY'
+          import json, os, re
+          def version(tag):
+              return tuple(map(int, tag[1:].split(".")))
+          tag = os.environ["GITHUB_REF_NAME"]
+          for release in json.load(open("releases.json")):
+              previous = release["tagName"]
+              if re.fullmatch(r"v\d+\.\d+\.\d+", previous) and version(tag) <= version(previous):
+                  raise SystemExit(f"{tag} must be newer than published release {previous}")
+          PY
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --latest --title "Fikr Vox ${GITHUB_REF_NAME#v}" --generate-notes \
+            release/Fikr-Vox-macOS-arm64.dmg release/Fikr-Vox-macOS-arm64.app.tar.gz \
+            release/Fikr-Vox-macOS-arm64.app.tar.gz.sig release/latest.json

@@ -39,7 +39,7 @@ test('music sources, split references, and preview preferences survive saving an
 
 test('browser settings and spending modules are served as JavaScript', async t => {
   const f = await fixture(t);
-  for(const name of ['settings.js','spending.js','spending-model.js','page-gallery.js','twin-editor.js','twin-models.js']){
+  for(const name of ['settings.js','settings-about.js','spending.js','spending-model.js','page-gallery.js','page-queue.js','twin-editor.js','twin-models.js','video-takes.js']){
     const response = await fetch(f.base + '/' + name);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /javascript/);
@@ -70,4 +70,41 @@ test('legacy VoiceStudio credentials retain their old endpoint on upgrade', asyn
   const reopened=await createApp({dataDir:f.dir});
   t.after(()=>reopened.server.emit('close'));
   assert.equal(reopened.store.read().settings.voicestudioUrl,'https://voicestudio.example.invalid:9444');
+});
+
+test('About metadata and offline license notices are bundled and served as JSON',async t=>{
+ const f=await fixture(t);
+ const responses=await Promise.all(['/app-info.json','/third-party-notices.json'].map(path=>fetch(f.base+path)));
+ for(const response of responses){assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/application\/json/);}
+ const [info,notices]=await Promise.all(responses.map(response=>response.json()));
+ const config=JSON.parse(await readFile(new URL('../src-tauri/tauri.conf.json',import.meta.url),'utf8'));
+ assert.equal(info.version,config.version);assert.equal(info.name,config.productName);const catalog=JSON.parse(await readFile(new URL('../local-tts/catalog.json',import.meta.url),'utf8'));const languageCatalog=JSON.parse(await readFile(new URL('../local-tts/language-catalog.json',import.meta.url),'utf8'));assert.equal(info.models.length,Object.keys(catalog).length+Object.keys(languageCatalog).length);
+ assert.ok(info.applicationLicense===null||typeof info.applicationLicense==='string');
+ assert.ok(notices.components.length>0);
+ for(const component of notices.components){assert.ok(component.name&&component.version&&component.license);for(const notice of component.notices)assert.equal(typeof notices.texts[notice.textId],'string');}
+});
+
+test('the voice traits form is served as a JavaScript module',async t=>{
+ const f=await fixture(t);const res=await fetch(f.base+'/voice-design-form.js');assert.equal(res.status,200);assert.match(res.headers.get('content-type'),/javascript/);assert.match(await res.text(),/export function mountVoiceDesignForm/);
+});
+
+
+test('default model routes persist across reload and provider disconnect', async t => {
+  const f=await fixture(t);
+  await f.call('/settings','PUT',{openrouterKey:'routing-test-key',workerUrl:'http://worker.local:8000'});
+  const routes={model:'chat/default',speechModel:'speech/default',listeningModel:'transcription/default',videoModel:'video/default',voiceProvider:'local',localEngine:'omnivoice'};
+  assert.equal((await f.call('/settings','PUT',routes)).status,200);
+  await f.call('/settings','PUT',{openrouterKey:''});
+  const reopened=await createApp({dataDir:f.dir});t.after(()=>reopened.server.emit('close'));
+  const saved=reopened.store.read().settings;
+  for(const [key,value] of Object.entries(routes))assert.equal(saved[key],value,key);
+  assert.equal(saved.workerUrl,'http://worker.local:8000');
+  assert.ok(!JSON.stringify(saved).includes('routing-test-key'));
+});
+
+test('About metadata and offline license notices are available through the app API',async t=>{
+ const f=await fixture(t,()=>{throw Error('About must not contact a provider');});
+ const info=await f.call('/about/info');assert.equal(info.status,200);assert.equal(typeof info.data.name,'string');assert.ok(info.data.models.some(m=>m.repo==='facebook/m2m100_418M'));
+ const notices=await f.call('/about/notices');assert.equal(notices.status,200);assert.ok(notices.data.components.length>0);for(const component of notices.data.components)for(const notice of component.notices)assert.equal(typeof notices.data.texts[notice.textId],'string');
+ assert.equal((await f.call('/about/secrets')).status,404);
 });

@@ -1,6 +1,18 @@
 import {podcastPacing} from './audio-pacing.js';
 export const projectType = project => project?.projectType || 'storytelling';
 export const isPodcast = project => projectType(project) === 'podcast';
+export const isAudiobook = project => projectType(project) === 'audiobook';
+export const audiobookChapterId = section => section?.chapterId || section?.id;
+export function audiobookChapters(project) {
+  const chapters = new Map();
+  for (const section of project.sections) {
+    if (section.audioAssetId) continue;
+    const id = audiobookChapterId(section);
+    if (!chapters.has(id)) chapters.set(id, {id, title:section.chapterTitle || section.title, blocks:[]});
+    chapters.get(id).blocks.push(section);
+  }
+  return [...chapters.values()];
+}
 export const defaultPodcast = () => ({
   speakers: [{id:'host',name:'Host',profileId:'',voice:''},{id:'guest',name:'Guest',profileId:'',voice:''}],
   sceneImageId:'',
@@ -9,17 +21,25 @@ export const defaultPodcast = () => ({
 export const speakerFor = (project, section) => isPodcast(project) ? project.podcast?.speakers?.find(s=>s.id===section?.speakerId) : undefined;
 export function voiceTrackFor(project,section) {
   if(section?.trackId)return project?.tracks?.find(t=>t.id===section.trackId);
-  return isPodcast(project)?project?.tracks?.find(t=>t.speakerId===section?.speakerId||t.id==='speaker-'+section?.speakerId):project?.tracks?.[0];
+  if(isPodcast(project))return project?.tracks?.find(t=>t.speakerId===section?.speakerId||t.id==='speaker-'+section?.speakerId);
+  if(isAudiobook(project))return project?.tracks?.find(t=>t.kind!=='music'&&t.id!=='music');
+  return project?.tracks?.[0];
 }
-export const profileIdFor = (project, section) => voiceTrackFor(project,section)?.profileId || (isPodcast(project) ? speakerFor(project,section)?.profileId || '' : project?.profileId || '');
+export function profileIdFor(project, section) {
+  const track=voiceTrackFor(project,section);
+  if(isAudiobook(project)&&track?.kind==='character')return track.profileId||'';
+  return track?.profileId || (isPodcast(project) ? speakerFor(project,section)?.profileId || '' : project?.profileId || '');
+}
 export const presetVoiceFor = (project,section) => voiceTrackFor(project,section)?.profileId ? '' : speakerFor(project,section)?.voice || '';
 export function matchesSpeaker(project, section, take) {
+  if(isAudiobook(project)&&!section?.audioAssetId)return take.profileId===profileIdFor(project,section);
   if(!section?.audioAssetId&&voiceTrackFor(project,section)?.profileId)return take.profileId===profileIdFor(project,section)&&(!isPodcast(project)||take.speakerId===section.speakerId);
   if (!isPodcast(project)) return true;
   const speaker=speakerFor(project,section);
   return !!speaker?.profileId && take.profileId===speaker.profileId && take.speakerId===speaker.id && (!speaker.voice || take.voiceMode!=='preset' || take.voice===speaker.voice);
 }
 export function projectSection(project, section) {
+  if(section&&isAudiobook(project)&&(!section.audioAssetId||section.sourceTakeId))return {...section,sequenceId:'audiobook-script'};
   if (!section || !isPodcast(project)) return section;
   const speaker=speakerFor(project,section), other=project.podcast?.speakers?.find(s=>s.id!==section.speakerId);
   const direction=speaker ? `${speaker.name} is speaking. ${other?.name || 'The other character'} listens naturally. Keep both characters in the same podcast set.` : '';
@@ -27,7 +47,7 @@ export function projectSection(project, section) {
   return {...section,...(!section.audioAssetId||section.sourceTakeId?{sequenceId:'podcast-dialogue',autoPace:pacing!=='off',gapBefore:first?.id===section.id?0:podcastPacing[pacing]?.gap??.18}:{}),sceneImageId:section.sceneImageId || project.podcast?.sceneImageId || '',scenePrompt:[project.podcast?.scenePrompt,direction,section.scenePrompt].filter(Boolean).join('\n')};
 }
 export function validateProjectType(value) {
-  if (value!==undefined && !['storytelling','podcast','dubbing'].includes(value)) throw new Error('Choose Story Telling, Podcast or Video Dubbing.');
+  if (value!==undefined && !['storytelling','podcast','dubbing','audiobook'].includes(value)) throw new Error('Choose Story Telling, Podcast, Video Dubbing or Audiobook.');
   return value || 'storytelling';
 }
 export function normalizePodcast(value=defaultPodcast(), state) {
@@ -48,10 +68,10 @@ export function validateSpeakers(sections, podcast) {
   if (sections.some(s=>!s.audioAssetId && !podcast.speakers.some(p=>p.id===s.speakerId))) throw new Error('Choose a character for every podcast turn.');
 }
 // A label starts a turn; following unlabeled lines belong to the same speaker.
-export function parsePodcastScript(text, speakers) {
-  if (!text.trim()) throw new Error('Paste your podcast script first.');
+export function parsePodcastScript(text, speakers, {podcast=true}={}) {
+  if (!text.trim()) throw new Error('Paste your script first.');
   const aliases=new Map();
-  for (const [i,speaker] of speakers.entries()) for (const name of [speaker.name,speaker.id,...(i===0?['Host']:i===1?['Guest']:[`Guest ${i}`]),`Speaker ${i+1}`]) {
+  for (const [i,speaker] of speakers.entries()) for (const name of podcast?[speaker.name,speaker.id,...(i===0?['Host']:i===1?['Guest']:[`Guest ${i}`]),`Speaker ${i+1}`]:[speaker.name]) {
     const key=name.toLowerCase();
     if (aliases.has(key) && aliases.get(key)!==speaker.id) throw new Error('Character names conflict with Host, Guest or Speaker labels. Rename the characters.');
     aliases.set(key,speaker.id);
@@ -66,7 +86,7 @@ export function parsePodcastScript(text, speakers) {
     else throw new Error(`Start each turn with a speaker name, for example “${speakers[0].name}: Hello.”`);
   }
   if (!turns.length || turns.some(t=>!t.text.trim())) throw new Error('Every speaker turn needs dialogue.');
-  if (turns.length>100) throw new Error('Use up to 100 podcast turns.');
+  if (turns.length>100) throw new Error('Use up to 100 dialogue blocks.');
   if (turns.some(t=>t.text.length>50000)) throw new Error('Keep each turn under 50,000 characters.');
   return turns;
 }

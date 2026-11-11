@@ -7,7 +7,10 @@ export function arrangeAudio(clips,tracks){
  const start=Number.isFinite(c.sec.offset)?Math.max(0,c.sec.offset):(c.sec.sequenceId?sequences.get(c.sec.sequenceId)||0:ends.get(track.id))+(c.sec.gapBefore||0);const end=start+length;if(c.sec.sequenceId)sequences.set(c.sec.sequenceId,Math.max(sequences.get(c.sec.sequenceId)||0,end));ends.set(track.id,Math.max(ends.get(track.id),end));return {...c,trackId:track.id,start,end,range,gain:track.muted?0:track.volume??1};});
  return {clips:placed,duration:Math.max(0,...placed.map(c=>c.end)),tracks:list};
 }
-export function playbackPlan(clips,position){return clips.filter(c=>!c.pending&&c.end>position).map(c=>({id:c.sec.id,delay:Math.max(0,c.start-position),offset:c.range.start+Math.max(0,position-c.start),duration:c.end-Math.max(position,c.start),trackId:c.trackId}));}
+export const timelinePlaybackRates = Object.freeze([0.25,0.5,0.75,1,1.25,1.5,1.75,2]);
+export function playbackRate(value){const rate=Number(value);return timelinePlaybackRates.includes(rate)?rate:1;}
+export function playbackPosition(base,elapsed,rate,duration){return Math.min(duration,Math.max(0,base+Math.max(0,elapsed)*playbackRate(rate)));}
+export function playbackPlan(clips,position,rate=1){return clips.filter(c=>!c.pending&&c.end>position).map(c=>({id:c.sec.id,delay:Math.max(0,c.start-position)/playbackRate(rate),offset:c.range.start+Math.max(0,position-c.start),duration:c.end-Math.max(position,c.start),trackId:c.trackId}));}
 
 // Keep drafts editable before a generated take exists. Width is an estimate, never a waveform.
 export function editableAudioClips(clips,decoded=[],durations=new Map()) {

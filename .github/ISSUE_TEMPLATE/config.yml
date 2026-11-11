@@ -1,4 +1,4 @@
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/bigmints/Fikr-Vox/security/advisories/new
+    url: https://github.com/bigmints/fikr-vox/security/advisories/new
     about: Share vulnerability details privately with the maintainers.

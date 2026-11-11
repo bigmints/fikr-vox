@@ -1,0 +1,4 @@
+export const currentVideoProvider=settings=>settings.videoProvider||'openrouter';
+export const videoProviderChoices=settings=>[['openrouter','OpenRouter'],...(settings.providers||[]).filter(p=>p.models?.some(m=>m.kind==='video')).map(p=>[p.id,p.name])];
+export function videoProviderModels(settings,provider=currentVideoProvider(settings)){return provider?.startsWith('api:')?(settings.providers||[]).find(p=>p.id===provider)?.models.filter(m=>m.kind==='video')||[]:settings.videoModels||[];}
+export function defaultVideoModel(settings,provider=currentVideoProvider(settings)){const models=videoProviderModels(settings,provider),saved=provider.startsWith('api:')?(settings.providers||[]).find(p=>p.id===provider)?.defaultModels?.video:settings.videoModel;return models.find(m=>m.id===saved)?.id||models[0]?.id||'';}

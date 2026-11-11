@@ -1,0 +1,89 @@
+{
+  "openai": {
+    "name": "OpenAI (ChatGPT)",
+    "baseUrl": "https://api.openai.com/v1",
+    "protocol": "openai",
+    "kinds": [
+      "chat",
+      "speech",
+      "transcription"
+    ]
+  },
+  "gemini": {
+    "name": "Google Gemini",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "protocol": "openai",
+    "kinds": [
+      "chat"
+    ]
+  },
+  "anthropic": {
+    "name": "Anthropic (Claude)",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "protocol": "anthropic",
+    "kinds": [
+      "chat"
+    ]
+  },
+  "elevenlabs": {
+    "name": "ElevenLabs",
+    "baseUrl": "https://api.elevenlabs.io/v1",
+    "protocol": "elevenlabs",
+    "kinds": [
+      "speech"
+    ]
+  },
+  "groq": {
+    "name": "Groq",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "protocol": "openai",
+    "kinds": [
+      "chat",
+      "transcription"
+    ]
+  },
+  "openrouter": {
+    "name": "OpenRouter",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "protocol": "openai",
+    "kinds": [
+      "chat",
+      "speech"
+    ]
+  },
+  "custom": {
+    "name": "Custom API endpoint",
+    "baseUrl": "",
+    "protocol": "openai",
+    "kinds": [
+      "chat",
+      "speech",
+      "transcription"
+    ]
+  },
+  "higgsfield": {
+    "name": "Higgsfield",
+    "baseUrl": "https://api.higgsfield.ai",
+    "protocol": "higgsfield",
+    "kinds": [
+      "video"
+    ]
+  },
+  "voicestudio": {
+    "name": "VoiceStudio",
+    "baseUrl": "",
+    "protocol": "voicestudio",
+    "kinds": [
+      "speech"
+    ],
+    "models": [
+      {
+        "id": "omnivoice",
+        "name": "OmniVoice",
+        "kind": "speech",
+        "cloning": true,
+        "voices": []
+      }
+    ]
+  }
+}

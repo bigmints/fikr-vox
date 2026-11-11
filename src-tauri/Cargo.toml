@@ -1,5 +1,5 @@
 [package]
-name = "mytwin"
+name = "fikr-vox"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,8 +16,10 @@ chrono = "0.4"
 rfd = "0.16"
 mime_guess = "2"
 base64 = "0.22"
+tauri-plugin-updater = "2.14.1"
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test", "protocol-asset"] }
 tempfile = "3"
 
 [profile.release]

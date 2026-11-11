@@ -4,9 +4,9 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../server.mjs';
-import {defaultPodcast,parsePodcastScript,isPodcast,matchesSpeaker,projectSection} from '../public/project-model.js';
+import {audiobookChapters,defaultPodcast,parsePodcastScript,isPodcast,matchesSpeaker,projectSection} from '../public/project-model.js';
 import {prepareVideo} from '../lib/video.mjs';
-import {linkedVideo} from '../public/timeline-model.js';
+import {arrangeAudio,linkedVideo} from '../public/timeline-model.js';
 
 async function fixture(t){
   const dir=await mkdtemp(join(tmpdir(),'mytwin-podcast-')),app=await createApp({dataDir:dir});
@@ -27,7 +27,7 @@ test('concurrent episode preparation reuses identical snapshots; changed voices 
 });
 test('browser serves every Podcast audio module dependency',async t=>{
  const f=await fixture(t);
- for(const path of ['/app.js','/podcast-audio.js','/podcast-tracks.js','/podcast-markdown.js','/audio-pacing.js','/project-model.js','/worker-presets.js','/audio-timeline.js','/audio-cache.js','/timeline-export.js']){
+ for(const path of ['/app.js','/desktop-updates.js','/podcast-audio.js','/podcast-tracks.js','/podcast-markdown.js','/audio-pacing.js','/project-model.js','/worker-presets.js','/audio-timeline.js','/audio-cache.js','/timeline-export.js']){
   const response=await fetch(`http://127.0.0.1:${f.server.address().port}${path}`);assert.equal(response.status,200,path);assert.match(response.headers.get('content-type'),/javascript/);
  }
 });
@@ -45,11 +45,51 @@ test('new project types persist; legacy projects retain the storytelling workflo
   assert.equal(story.projectType,'storytelling');assert.equal(story.sections.length,1);assert.equal(isPodcast({}),false);
   const result=await f.call('/projects','POST',{title:'My podcast',projectType:'podcast'});assert.equal(result.status,201);
   const p=result.data;assert.equal(p.podcast.speakers.length,2);assert.deepEqual(p.sections.map(s=>s.speakerId),['host','guest']);
+  const audiobook=await f.call('/projects','POST',{title:'My audiobook',projectType:'audiobook'});
+  assert.equal(audiobook.status,201);
+  const book=audiobook.data;
+  assert.equal(book.projectType,'audiobook');
+  assert.deepEqual(book.sections.map(s=>s.title),['Chapter 1']);
+  book.sections[0].text='Once upon a time.';
+  book.sections.push({id:'chapter-two',title:'Chapter 2',text:'The next day.'});
+  assert.equal((await f.call('/projects/'+book.id,'PUT',book)).status,200);
   const restarted=await createApp({dataDir:f.dir});t.after(()=>restarted.server.emit('close'));
-  assert.equal(restarted.store.read().projects[0].projectType,'podcast');
+  assert.equal(restarted.store.read().projects.find(project=>project.id===p.id).projectType,'podcast');
+  const savedBook=restarted.store.read().projects.find(project=>project.id===book.id);
+  assert.equal(savedBook.projectType,'audiobook');
+  assert.deepEqual(savedBook.sections.map(s=>s.text),['Once upon a time.','The next day.']);
   assert.equal((await f.call('/projects','POST',{projectType:'unknown'})).status,400);
   story.projectType='podcast';story.podcast=defaultPodcast();story.sections[0].speakerId='host';
   assert.equal((await f.call('/projects/'+story.id,'PUT',story)).status,400);
+});
+test('audiobook chapter dialogue saves character assignments and plays in script order',async t=>{
+  const f=await fixture(t);
+  const book=(await f.call('/projects','POST',{projectType:'audiobook'})).data;
+  await f.store.update(s=>{
+    s.profiles=[{id:'narrator',name:'Narrator voice'},{id:'guest',name:'Guest voice'}];
+  });
+  book.profileId='narrator';
+  book.tracks=[
+    {id:'voice',name:'Narrator',volume:1},
+    {id:'guest',name:'Guest',kind:'character',profileId:'guest',volume:1},
+    {id:'other',name:'Other',kind:'character',volume:1}
+  ];
+  const chapterId=book.sections[0].id;
+  const turns=parsePodcastScript('Narrator: The door opened.\nGuest: Hello!\nNarrator: It was a surprise.',book.tracks,{podcast:false});
+  book.sections=turns.map((turn,i)=>({
+    id:i===0?chapterId:'dialogue-'+i,chapterId,chapterTitle:'The Door',
+    title:'Dialogue '+(i+1),text:turn.text,trackId:turn.speakerId
+  }));
+  book.sections.push({id:'next',title:'Chapter 2',text:'Later…',trackId:'other'});
+  const saved=await f.call('/projects/'+book.id,'PUT',book);
+  assert.equal(saved.status,200);
+  assert.deepEqual(audiobookChapters(saved.data).map(ch=>[ch.title,ch.blocks.length]),[['The Door',3],['Chapter 2',1]]);
+  const layout=arrangeAudio(saved.data.sections.map(sec=>({sec:projectSection(saved.data,sec),duration:1})),saved.data.tracks);
+  assert.deepEqual(layout.clips.map(c=>[c.trackId,c.start]),[['voice',0],['guest',1],['voice',2],['other',3]]);
+  const prepare=sectionId=>f.call('/jobs','POST',{projectId:book.id,sectionId,kind:'voice',provider:'openrouter',engine:'test-tts',voiceMode:'preset',voice:'test'});
+  assert.equal((await prepare(chapterId)).data.profileId,'narrator');
+  assert.equal((await prepare('dialogue-1')).data.profileId,'guest');
+  assert.equal((await prepare('next')).status,400);
 });
 test('dialogue import preserves speaker order, multiline dialogue and rejects unknown speakers',()=>{
   const speakers=[{id:'host',name:'Alex'},{id:'guest',name:'Sam'}];
@@ -87,6 +127,42 @@ test('podcast cast, scene and turn validation protect saved data',async t=>{
     const bad=structuredClone(p);mutate(bad);assert.equal((await f.call('/projects/'+p.id,'PUT',bad)).status,400);
   }
   assert.deepEqual(f.store.read().projects[0],p);
+});
+
+test('lip-sync takes snapshot the turn image and motion instructions with image fallbacks',async t=>{
+ const f=await fixture(t),p=(await f.call('/projects','POST',{projectType:'podcast'})).data;
+ const sec=p.sections[0];
+ p.podcast.speakers[0].profileId='host-profile';
+ p.podcast.sceneImageId='studio-photo';
+ Object.assign(sec,{text:'Welcome.',sceneImageId:'turn-photo',scenePrompt:'Wide shot',avatarMotionPrompt:'  Smile and nod once.  '});
+ await f.store.update(s=>{
+  s.profiles=[{id:'host-profile',name:'Host',avatarAssetId:'portrait'}];
+  s.assets=[...['portrait','studio-photo','turn-photo'].map(id=>({id,type:'image/png',size:100})),{id:'audio',type:'audio/wav',size:100}];
+  s.jobs=[{id:'voice',projectId:p.id,sectionId:sec.id,kind:'voice',profileId:'host-profile',speakerId:'host',text:sec.text,status:'completed',approved:true,outputId:'audio'}];
+ });
+ const save=async()=>assert.equal((await f.call('/projects/'+p.id,'PUT',p)).status,200);
+ const prepare=async()=>{
+  const r=await f.call('/jobs','POST',{projectId:p.id,sectionId:sec.id,kind:'avatar',provider:'openrouter',engine:'heygen/avatar-iv',sourceJobId:'voice'});
+  assert.equal(r.status,201);
+  return r.data;
+ };
+ await save();
+ const first=await prepare();
+ assert.deepEqual(first.inputs,{avatar:'turn-photo',audio:'audio'});
+ assert.equal(first.avatarMotionPrompt,'Smile and nod once.');
+ delete sec.sceneImageId;
+ sec.avatarMotionPrompt='';
+ await save();
+ const shared=await prepare();
+ assert.equal(shared.inputs.avatar,'studio-photo');
+ assert.equal(shared.avatarMotionPrompt,undefined);
+ p.podcast.sceneImageId='';
+ sec.avatarMotionPrompt='Raise an eyebrow.';
+ await save();
+ const portrait=await prepare();
+ assert.equal(portrait.inputs.avatar,'portrait');
+ assert.equal(portrait.avatarMotionPrompt,'Raise an eyebrow.');
+ assert.equal(f.store.read().jobs.find(j=>j.id===first.id).avatarMotionPrompt,'Smile and nod once.');
 });
 test('podcast scene videos use the shared set, correct character and current voice; scene changes invalidate links',()=>{
   const p={id:'p',projectType:'podcast',podcast:defaultPodcast(),sections:[{id:'s',speakerId:'guest',text:'Thanks for having me.',scenePrompt:'Medium shot.'}]};

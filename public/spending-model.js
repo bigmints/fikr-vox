@@ -5,7 +5,7 @@ export function reportedCost(usage){
 }
 export function spendingRows(jobs){
  const seen=new Set();
- return [...jobs].filter(j=>j.provider==='openrouter'&&!j.sequence)
+ return [...jobs].filter(j=>j.provider==='openrouter'&&!j.sequence&&!j.copiedFromJobId)
   .sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))
   .filter(j=>{const key=j.videoRemoteId||j.id;if(seen.has(key))return false;seen.add(key);return true;})
   .map(j=>({...j,cost:reportedCost(j.usage),billing:reportedCost(j.usage)!==null?'Reported':j.status==='prepared'||j.submissionAttempted===false||/No generation was submitted/i.test(j.error||'')?'Not submitted':'Unknown'}));

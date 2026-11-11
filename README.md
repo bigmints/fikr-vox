@@ -15,12 +15,13 @@ Fikr Vox is an open-source studio for voiceovers, podcasts, and video dubbing on
 
 ## Run from source
 
-You'll need an Apple silicon Mac, Node.js 22 or newer, Rust, Xcode with the macOS 26 SDK or newer, Python 3, and `uv` on your PATH. [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+You'll need an Apple silicon Mac, Node.js 22 or newer, Rust, Xcode with the macOS 26 SDK or newer, Python 3.11 or newer, and `uv` on your PATH. [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```sh
 git clone https://github.com/bigmints/fikr-vox.git
 cd fikr-vox
 npm ci
+cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
 npm run desktop
 ```
 

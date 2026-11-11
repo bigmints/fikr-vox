@@ -1,14 +1,18 @@
 # Contributing to Fikr Vox
 
-Use [GitHub Issues](https://github.com/bigmints/fikr-vox/issues) for bugs and feature requests. For a bug, include the app version or commit, your macOS version, whether you used the desktop app or browser server, and steps to reproduce it. Remove API keys and personal media before attaching logs or examples. Report vulnerabilities privately using the [security policy](SECURITY.md).
+Use [GitHub Issues](https://github.com/bigmints/fikr-vox/issues) for bugs and feature requests. For a bug, include the app version or commit, your macOS version, whether you used the desktop app or browser server, and steps to reproduce it. Remove API keys and personal media before attaching logs or examples. Report vulnerabilities privately. [Security policy](SECURITY.md)
 
 ## Development
 
 Follow the [desktop setup](README.md#run-from-source) to run the Tauri app. To package a local `Fikr Vox.app` bundle, run `npm run build:desktop`. The bundle is under `src-tauri/target/release/bundle/macos/`.
 
-Use Node.js 22 or newer to run the browser development server.
+To run the browser development server, install the source-build prerequisites and generate the About panel resources.
 
 ```sh
+npm ci
+cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
+node scripts/prepare-local-tts.mjs
+npm run prepare:licenses
 npm start
 ```
 
@@ -24,16 +28,15 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Copy `.env.example` to `.en
 | [`local-tts/`](local-tts/) | Python speech engine, model catalog, and dependency lockfile |
 | [`test/`](test/) | Application and integration tests |
 | [`website/`](website/README.md) | Landing page, interactive demo, and user guide |
-| [`docs/`](docs/) | Remote worker API and macOS release runbook |
+| [`docs/`](docs/) | [Remote worker API](docs/worker-api.md) and [macOS release runbook](docs/macos-release.md) |
 
 Check both backends when changing shared behavior or a saved data format.
 
 ## Tests
 
-Run the suites on an Apple silicon Mac with the source-build prerequisites installed. The Node media tests use Swift and AVFoundation. The Rust command prepares the desktop bundle resources before running the locked tests. Provider tests use mocks and temporary project data.
+Run the resource setup above before testing on an Apple silicon Mac. The Node media tests use Swift and AVFoundation. The Rust command prepares the desktop bundle resources before running the locked tests. Provider tests use mocks and temporary project data.
 
 ```sh
-npm ci
 npm test
 npm run test:rust
 ```

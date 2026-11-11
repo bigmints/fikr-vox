@@ -11,12 +11,13 @@
     <h2>Install Fikr Vox</h2>
     <p>Fikr Vox runs on Apple silicon Macs with macOS 13 or later. Check <a href="https://github.com/bigmints/fikr-vox/releases">GitHub Releases</a> for packaged builds.</p>
     <h3>Run from source</h3>
-    <p>Install Node.js 22 or newer, Rust, Xcode with the macOS 26 SDK or newer, Python 3, and <code>uv</code> on your PATH. You'll need internet access to install dependencies and download voice models. <a href="https://v2.tauri.app/start/prerequisites/">Tauri prerequisites</a> · <a href="https://docs.astral.sh/uv/getting-started/installation/">Install uv</a></p>
+    <p>Install Node.js 22 or newer, Rust, Xcode with the macOS 26 SDK or newer, Python 3.11 or newer, and <code>uv</code> on your PATH. You'll need internet access to install dependencies and download voice models. <a href="https://v2.tauri.app/start/prerequisites/">Tauri prerequisites</a> · <a href="https://docs.astral.sh/uv/getting-started/installation/">Install uv</a></p>
     <div class="command">
       <button aria-live="polite" class="copy" data-copy>Copy</button>
       <pre><code>git clone https://github.com/bigmints/fikr-vox.git
 cd fikr-vox
 npm ci
+cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
 npm run desktop</code></pre>
     </div>
     <h3>Build a local app bundle</h3>

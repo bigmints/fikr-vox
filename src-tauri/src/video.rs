@@ -30,7 +30,8 @@ if prompt.trim().is_empty(){return Err("Describe the video first".into());}
   if text(sec,"sceneImageId").is_empty()||text(sec,"scenePrompt").trim().is_empty(){return Err("Choose a scene image and describe the scene".into());}
   if !s["jobs"].as_array().is_some_and(|jobs|jobs.iter().any(|j|j["id"]==b["sourceJobId"]&&j["projectId"]==p["id"]&&j["sectionId"]==sec["id"]&&j["kind"]=="voice"&&j["status"]=="completed"&&j["text"]==sec["text"]&&projects::matches_speaker(p,sec,j))){return Err("Generate the current voiceover first".into());}
  }
- let m=s["settings"]["videoModels"].as_array().and_then(|a|a.iter().find(|m|m["id"]==b["engine"]&&m["supported_durations"].as_array().is_some_and(|a|!a.is_empty()))).ok_or("Refresh video models and choose a model")?;
+ let catalog=if crate::providers::is_api(&text(b,"provider")){s["settings"]["providers"].as_array().and_then(|a|a.iter().find(|p|p["id"]==b["provider"]&&p["type"]=="higgsfield")).map(|p|p["models"].clone()).unwrap_or(json!([]))}else{s["settings"]["videoModels"].clone()};
+ let m=catalog.as_array().and_then(|a|a.iter().find(|m|m["id"]==b["engine"]&&m["supported_durations"].as_array().is_some_and(|a|!a.is_empty()))).ok_or("Refresh video models and choose a model")?;
  let mut video=json!({"generate_audio":false});
  for (key,field) in [("duration","supported_durations"),("resolution","supported_resolutions"),("aspect_ratio","supported_aspect_ratios")]{
   let v=&b["video"][key];if !v.is_null()&&v!=""{if !m[field].as_array().is_some_and(|a|a.contains(v)){return Err(format!("Choose a supported {key}"));}video[key]=v.clone();}
@@ -42,7 +43,7 @@ if prompt.trim().is_empty(){return Err("Describe the video first".into());}
   let a=s["assets"].as_array().unwrap().iter().find(|a|a["id"]==if b["scene"]==true {sec["sceneImageId"].clone()} else {profile["avatarAssetId"].clone()}&&["image/jpeg","image/png","image/webp"].contains(&text(a,"type").as_str())).ok_or("Select a twin with a JPG, PNG or WebP photo")?;
   if a["size"].as_u64().unwrap_or(0)>20*1024*1024{return Err("Use a photo smaller than 20 MB".into());}inputs["avatar"]=a["id"].clone();
  }
- Ok(json!({"id":uid(),"projectId":p["id"],"sectionId":sec["id"],"projectTitle":p["title"],"sectionTitle":sec["title"],"profileName":profile["name"].as_str().unwrap_or("Text prompt"),"profileId":profile["id"],"speakerId":projects::speaker(p,sec).map(|s|s["id"].clone()).unwrap_or(json!("")),"speakerName":projects::speaker(p,sec).map(|s|s["name"].clone()).unwrap_or(json!("")),"kind":"video","provider":"openrouter","engine":m["id"],"text":sec["text"],"prompt":if b["scene"]==true {sec["scenePrompt"].clone()} else {json!(prompt)},"scenePrompt":if b["scene"]==true {sec["scenePrompt"].clone()} else {Value::Null},"sceneImageId":if b["scene"]==true {sec["sceneImageId"].clone()} else {Value::Null},"sourceJobId":if b["scene"]==true {b["sourceJobId"].clone()} else {Value::Null},"video":video,"inputs":inputs,"sequence":sequence_options(b,m,s)?,"status":"prepared","stage":"Saved","createdAt":now(),"updatedAt":now(),"approved":false}))
+ Ok(json!({"id":uid(),"projectId":p["id"],"sectionId":sec["id"],"projectTitle":p["title"],"sectionTitle":sec["title"],"profileName":profile["name"].as_str().unwrap_or("Text prompt"),"profileId":profile["id"],"speakerId":projects::speaker(p,sec).map(|s|s["id"].clone()).unwrap_or(json!("")),"speakerName":projects::speaker(p,sec).map(|s|s["name"].clone()).unwrap_or(json!("")),"kind":"video","provider":if crate::providers::is_api(&text(b,"provider")){text(b,"provider")}else{"openrouter".into()},"providerType":if crate::providers::is_api(&text(b,"provider")){"higgsfield"}else{"openrouter"},"engine":m["id"],"text":sec["text"],"prompt":if b["scene"]==true {sec["scenePrompt"].clone()} else {json!(prompt)},"scenePrompt":if b["scene"]==true {sec["scenePrompt"].clone()} else {Value::Null},"sceneImageId":if b["scene"]==true {sec["sceneImageId"].clone()} else {Value::Null},"sourceJobId":if b["scene"]==true {b["sourceJobId"].clone()} else {Value::Null},"video":video,"inputs":inputs,"sequence":sequence_options(b,m,s)?,"status":"prepared","stage":"Saved","createdAt":now(),"updatedAt":now(),"approved":false}))
 }
 impl OpenRouter{
  pub async fn video_models(&self)->Result<Value>{
@@ -55,7 +56,7 @@ impl OpenRouter{
    let s=self.store.read();let j=s["jobs"].as_array().unwrap().iter().find(|j|j["id"]==id);
    let known=j.is_some_and(|j|!text(j,"videoRemoteId").is_empty()&&!j["sequence"].is_object());
    let attempted=j.is_some_and(|j|j["submissionAttempted"]==true);
-   let fields=if person_image_rejected(&e){json!({"status":"failed","error":PERSON_IMAGE_ERROR})}else if !known&&!attempted {json!({"status":"failed","error":e})}else if known{json!({"error":format!("{e}. Refresh to retry checking this job.")})}else{json!({"status":"failed","error":format!("{e}. Check OpenRouter activity before starting another take; credits may have been used.")})};
+   let fields=if person_image_rejected(&e){json!({"status":"failed","error":PERSON_IMAGE_ERROR})}else if !known&&!attempted {json!({"status":"failed","error":e})}else if known{json!({"error":format!("{e}. Refresh to retry checking this job.")})}else{json!({"status":"failed","error":format!("{e}. Check provider activity before starting another take; credits may have been used.")})};
    let _=self.store.patch_job(&id,fields);
    if !known {self.audio_shares.lock().unwrap().remove(&id);}
   }
@@ -65,6 +66,7 @@ impl OpenRouter{
  async fn video_request(&self,id:&str,submit:bool)->Result<()>{
   let s=self.store.read();let j=s["jobs"].as_array().unwrap().iter().find(|j|j["id"]==id).ok_or("Job not found")?;
   if j["sequence"].is_object(){if !["submitting","queued","running"].contains(&text(j,"status").as_str()){return Ok(());}return Box::pin(self.sequence_request(id,submit)).await;}
+  if crate::providers::is_api(&text(j,"provider")){return self.higgsfield_request(j,submit).await;}
   if submit{
    if j["status"]!="submitting"||!text(j,"videoRemoteId").is_empty(){return Ok(());}
    let mut body=j["video"].clone();body["model"]=j["engine"].clone();body["prompt"]=if j["prompt"].is_string(){j["prompt"].clone()}else{j["text"].clone()};
@@ -72,6 +74,10 @@ impl OpenRouter{
     validate_avatar(&s,&j["inputs"],&text(j,"engine"))?;
     if j["audioShare"]!=true{return Err("Allow a temporary audio link before generating with OpenRouter".into());}
     body=avatar_options(&j["video"])?;body["model"]=json!("heygen/avatar-iv");
+    let motion_prompt = text(&j, "avatarMotionPrompt");
+    if !motion_prompt.is_empty() {
+     body["provider"] = json!({"options":{"heygen":{"motion_prompt":motion_prompt}}});
+    }
     let mut refs=Vec::new();
     for (key,kind,limit) in [("avatar","image_url",20u64),("audio","audio_url",50u64)] {
      let a=self.store.asset(&text(&j["inputs"],key))?;let path=self.store.asset_path(&a)?;
@@ -192,7 +198,7 @@ impl OpenRouter {
   let children:Vec<Value>=s["jobs"].as_array().unwrap().iter().filter(|c|c["parentVideoId"]==id).cloned().collect();
   if let Some(last)=children.last(){match text(last,"status").as_str(){
    "failed"=>return Err(text(last,"error")),
-   "submitting"=>return Err("Shot submission interrupted. Check OpenRouter activity before creating another video.".into()),
+   "submitting"=>return Err("Shot submission interrupted. Check provider activity before creating another video.".into()),
    "completed"=>{},_=>{Box::pin(self.video_run(text(last,"id"),false)).await;return Ok(());}
   }}
   let segments=j["sequence"]["segments"].as_array().ok_or("Missing shot plan")?;

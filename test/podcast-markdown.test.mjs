@@ -11,7 +11,7 @@ title: My episode
 # My episode
 
 ## Introduction
-**Host:** Welcome to **Fikr Vox**, a *local* studio.
+**Host:** Welcome to **MyTwin**, a *local* studio.
 We keep [your words](https://example.com) together.
 
 ### Guest
@@ -24,7 +24,7 @@ Thanks for having me.
 `;
   const saved=structuredClone(speakers);
   assert.deepEqual(parsePodcastMarkdown(script,speakers),[
-    {speakerId:'host',text:'Welcome to Fikr Vox, a local studio.\nWe keep your words together.'},
+    {speakerId:'host',text:'Welcome to MyTwin, a local studio.\nWe keep your words together.'},
     {speakerId:'guest',text:'Thanks for having me.'},
     {speakerId:'host',text:"Let's begin."},
     {speakerId:'guest-2',text:'Happy to join.'},
@@ -43,7 +43,7 @@ test('plain text, custom names, Unicode colons and multiline turns still import'
 
 test('Markdown formatting stays out of dialogue without losing escaped words or punctuation',()=>{
   assert.equal(spokenMarkdown('**Keep** _these_ `words`, ~~even these~~ and snake_case.'),'Keep these words, even these and snake_case.');
-  assert.equal(spokenMarkdown('Say \\*literal\\* and [Fikr Vox][studio].'),'Say *literal* and Fikr Vox.');
+  assert.equal(spokenMarkdown('Say \\*literal\\* and [MyTwin][studio].'),'Say *literal* and MyTwin.');
   assert.deepEqual(parsePodcastMarkdown('<!-- Note: not dialogue -->\nHost: A **clear** line.\n[studio]: https://example.com\n---\nGuest: A reply.',speakers),[
     {speakerId:'host',text:'A clear line.'},{speakerId:'guest',text:'A reply.'},
   ]);
