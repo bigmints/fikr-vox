@@ -2,9 +2,11 @@
 
 Fikr Vox is an open-source studio for voiceovers, podcasts, and video dubbing on Apple silicon Macs running macOS 13 or later.
 
-[Try the podcast demo](https://fikr.one/vox/#studio) · [Read the user guide](https://fikr.one/vox/docs/) · [GitHub Releases](https://github.com/bigmints/fikr-vox/releases)
+[Read the user guide](https://fikr.one/vox/docs/) · [GitHub Releases](https://github.com/bigmints/fikr-vox/releases)
 
-[![Fikr Vox podcast demo showing episode dialogue, a script editor, and separate host and guest tracks](website/dist/assets/studio.png)](https://fikr.one/vox/#studio)
+![Fikr Vox podcast video workspace with the recording preview, video clips, and separate speaker tracks](website/dist/assets/podcast-video.jpg)
+
+[View the podcast audio workspace](website/dist/assets/podcast-audio.jpg)
 
 ## What you can make
 
