@@ -10,7 +10,7 @@ From the repository root, run the preview server and open [http://127.0.0.1:4322
 node website/scripts/preview-main.cjs
 ```
 
-Open [the local user guide](http://127.0.0.1:4322/vox/docs/) to verify documentation changes. The preview server redirects backend routes to the live Fikr site. Run the routing tests before opening a pull request.
+Edit [the user guide source](dist/docs/index.html), then open [the local guide](http://127.0.0.1:4322/vox/docs/) to verify the changes. Keep section IDs stable so existing links still work. The preview server redirects backend routes to the live Fikr site. Run the routing tests before opening a pull request.
 
 ```sh
 node --test website/cloudrun/vox-entry.test.cjs

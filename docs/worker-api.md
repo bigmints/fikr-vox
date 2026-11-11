@@ -1,69 +1,70 @@
 # Fikr Vox worker API v1
 
-The client uses this contract to discover capabilities, upload reference media, and track remote jobs. The InfiniteTalk adapter under [`worker/`](../worker/) is retained for historical reference. Fikr Vox no longer offers new InfiniteTalk jobs or resumes unfinished ones.
+Fikr Vox uses this HTTP API to discover remote engines, upload reference media, and track jobs. The [InfiniteTalk adapter](../worker/) is historical. The app rejects new InfiniteTalk submissions and marks unfinished InfiniteTalk jobs as failed.
 
-All endpoints require `Authorization: Bearer <token>` when a token is configured. Serve on a trusted LAN or authenticated tunnel. Use HTTPS for untrusted networks. Never log tokens. JSON responses use `Content-Type: application/json`.
+When a connection token is configured, the client sends `Authorization: Bearer <token>`. Serve the API over HTTPS outside a trusted network. Use `application/json` for JSON responses and return errors as `{"error":"message"}` with the appropriate HTTP status.
 
-## GET /v1/capabilities
+## Discover engines
 
-```json
-{"apiVersion":1,"engines":[{"id":"chatterbox","name":"Chatterbox","kind":"voice","ready":true},{"id":"infinitetalk","name":"InfiniteTalk","kind":"avatar","ready":false}]}
-```
-
-`ready` means the model and dependencies are actually installed and usable. The worker must validate language support, media format, duration, memory and engine requirements when accepting jobs. Unsupported language or media must fail clearly rather than silently falling back to a different voice/model.
-
-## POST /v1/assets
-
-Raw media bytes. Headers: `Content-Type`, URL-encoded `X-Filename`, and `Idempotency-Key` (local asset UUID). Return `{"id":"worker-asset-id"}`. Repeating a key must return the same asset, not create another. Validate file contents, restrict media formats, and impose size limits.
-
-## POST /v1/jobs
-
-Header `Idempotency-Key` is the immutable local job UUID. The worker MUST persist idempotency mappings before starting inference, including across restarts. Repeating a request returns the existing job ID, including after a client timeout.
-
-Voice example:
+`GET /v1/capabilities` returns the API version and available engines.
 
 ```json
-{"clientJobId":"uuid","kind":"voice","engine":"chatterbox","text":"Hello from my twin.","language":"en","inputs":{"voice":"worker-reference-id"}}
+{
+  "apiVersion": 1,
+  "engines": [
+    { "id": "chatterbox", "name": "Chatterbox", "kind": "voice", "ready": true }
+  ]
+}
 ```
 
-Avatar example:
+Set `ready` to `true` when the engine can accept work. Validate language, media format, duration, and resource limits before accepting jobs.
+
+## Upload reference media
+
+Send raw media bytes to `POST /v1/assets` with these headers.
+
+| Header | Value |
+| --- | --- |
+| `Content-Type` | Media type of the upload |
+| `X-Filename` | URL-encoded filename |
+| `Idempotency-Key` | Local asset ID |
+
+Return `{"id":"worker-asset-id"}`. A repeated upload with the same key returns the original asset ID.
+
+## Submit a job
+
+Send a JSON payload to `POST /v1/jobs`. The `Idempotency-Key` header and `clientJobId` both carry the local job ID. Values in `inputs` are IDs returned by the asset endpoint.
 
 ```json
-{"clientJobId":"uuid","kind":"avatar","engine":"infinitetalk","text":"Optional narration metadata","language":"en","inputs":{"avatar":"worker-reference-id","audio":"worker-audio-id"}}
+{
+  "clientJobId": "local-job-id",
+  "kind": "voice",
+  "engine": "chatterbox",
+  "text": "Welcome to the show.",
+  "language": "en",
+  "inputs": { "voice": "worker-asset-id" }
+}
 ```
 
-Return `{"id":"remote-job-id"}`. Avatar audio is authoritative; never regenerate it from the metadata text. Serialize GPU-intensive jobs initially.
+Return `{"id":"remote-job-id"}`. Persist the idempotency mapping before inference starts so the same key returns the same job ID after a timeout or restart. For avatar engines, use the approved audio as the source of speech. The script is metadata.
 
-The InfiniteTalk adapter accepts `motionStyle: "restrained"` (default), `"podcast"` (the earlier nodding/breathing prompt), or `"minimal"` (experimental stronger restraint). Restrained removes requested nodding and shoulder motion. Minimal also supplies a motion-specific negative prompt and raises accelerated text guidance from 1 to 2; audio guidance remains 2. The wrapper keeps the model's quality negatives but removes `static` and `still picture` when applying this motion negative. These are generation directions, not guaranteed expression limits. Memory limits remain independent of motion style.
+## Poll status and download output
 
-`preview: true` renders at most the first 81 frames while preserving the entire source-audio preprocessing context. This allows a 3.24-second comparison with a full take using the same input, seed, portrait and frame window. It is not a replacement for the full-length avatar take.
+`GET /v1/jobs/:id` returns one of `queued`, `running`, `completed`, `failed`, `cancel_requested`, or `cancelled` in the `status` field. Use `stage` for a short progress message or `error` to explain a failed job.
 
-## GET /v1/jobs/:id
+A completed job includes one persisted artifact.
 
 ```json
-{"status":"running","stage":"Generating speech"}
+{
+  "status": "completed",
+  "output": { "id": "artifact-id", "name": "narration.wav", "type": "audio/wav" }
+}
 ```
 
-Allowed status: `queued`, `running`, `completed`, `failed`, `cancel_requested`, `cancelled`.
+`GET /v1/artifacts/:id` returns the artifact bytes and their media type. The client accepts WAV, MP3, audio MP4, video MP4, and WebM up to 512 MB. Keep artifact IDs valid across restarts.
 
-Completed:
+## Cancel and recover jobs
 
-```json
-{"status":"completed","output":{"id":"artifact-id","name":"narration.wav","type":"audio/wav"}}
-```
+`POST /v1/jobs/:id/cancel` requests cooperative cancellation. Subsequent status responses report `cancelled` when cancellation takes effect or `completed` if inference finished first.
 
-Failed: `{"status":"failed","error":"A useful, non-secret error description"}`.
-
-Outputs currently accepted: `audio/wav`, `audio/mpeg`, `audio/mp4`, `video/mp4`, `video/webm`. One output per job. IDs must remain retrievable across restarts. Do not report completion until the complete artifact is persisted.
-
-## GET /v1/artifacts/:id
-
-Return raw artifact bytes with their media content type and Content-Length when available. Max 512 MB in this client. The client downloads only from the configured worker origin, never arbitrary artifact URLs, and saves a local copy before marking the job complete.
-
-## POST /v1/jobs/:id/cancel
-
-Request cooperative cancellation; return successful HTTP status. Subsequent status polling must eventually report `cancelled`, or `completed` if it finished before cancellation. A successful request alone is not cancellation confirmation.
-
-## Recovery
-
-Client persists the worker URL and remote job ID. Known remote jobs are polled rather than resubmitted. Unknown submission results are reconciled by retrying the same idempotency key. A job is never sent to a different worker URL after a submission attempt. Prepared jobs require an explicit user submission.
+Fikr Vox saves the worker URL and remote job ID so it can resume polling. When a submission times out before the client receives a remote ID, it can retry with the original idempotency key. Prepared jobs require an explicit submission in the app.
