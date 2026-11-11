@@ -1,47 +1,50 @@
-# Fikr Vox macOS releases
+# Fikr Vox macOS release runbook
 
-The [desktop release workflow](../.github/workflows/desktop-release.yml) publishes stable `vMAJOR.MINOR.PATCH` tags from commits on `main` in `bigmints/fikr-vox`. It builds for Apple silicon on macOS 13 and later. Apple Foundation Models still requires macOS 26 and an eligible Mac.
+The [desktop release workflow](../.github/workflows/desktop-release.yml) publishes stable `vMAJOR.MINOR.PATCH` tags from `main` in `bigmints/fikr-vox`. It builds for Apple silicon Macs running macOS 13 or later. Apple Foundation Models requires macOS 26 and an eligible Mac.
 
-The workflow signs and notarizes the app and disk image. It verifies both staples and checks that the updater archive carries the same app, its bundled tools, and a valid signature for that version before publishing the release. The update feed is [latest.json](https://github.com/bigmints/fikr-vox/releases/latest/download/latest.json), and it points at the archive for the exact release tag.
+The workflow signs and notarizes the app and disk image, verifies the updater archive, and publishes [the update feed](https://github.com/bigmints/fikr-vox/releases/latest/download/latest.json).
 
-## One-time setup
+## Configure signing
 
-In [repository environment settings](https://github.com/bigmints/fikr-vox/settings/environments), use the `desktop-release` environment. Add the version tag under **Deployment branches and tags** before pushing it. The build reads these environment secrets and variable:
+In GitHub, create or open the `desktop-release` environment and allow the release tag under **Deployment branches and tags**. Configure the following environment secrets and variable. [Repository environments](https://github.com/bigmints/fikr-vox/settings/environments)
 
-| Name | Value |
-| --- | --- |
-| `APPLE_CERTIFICATE` | Base64 of a Developer ID Application certificate and private key exported together as a `.p12`. |
-| `APPLE_CERTIFICATE_PASSWORD` | Password for the exported `.p12`. |
-| `APPLE_API_KEY` | App Store Connect **team** API key ID. |
-| `APPLE_API_ISSUER` | App Store Connect issuer ID. |
-| `APPLE_API_PRIVATE_KEY` | Base64 of the matching `.p8` file. |
-| `TAURI_SIGNING_PRIVATE_KEY` | Contents of the Tauri updater private key file. |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password chosen when generating the updater key. |
-| `TAURI_UPDATER_PUBLIC_KEY` | **Environment variable** (not a secret): contents of the Tauri `.pub` file. |
+| Name | Type | Value |
+| --- | --- | --- |
+| `APPLE_CERTIFICATE` | Secret | Base64-encoded Developer ID Application certificate and private key exported as a `.p12` file |
+| `APPLE_CERTIFICATE_PASSWORD` | Secret | Password for the exported `.p12` file |
+| `APPLE_API_KEY` | Secret | App Store Connect team API key ID |
+| `APPLE_API_ISSUER` | Secret | App Store Connect issuer ID |
+| `APPLE_API_PRIVATE_KEY` | Secret | Base64-encoded `.p8` file for the team API key |
+| `TAURI_SIGNING_PRIVATE_KEY` | Secret | Contents of the Tauri updater private key file |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Secret | Password for the updater private key |
+| `TAURI_UPDATER_PUBLIC_KEY` | Variable | Contents of the Tauri updater `.pub` file |
 
-Follow [Apple's notarization instructions](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) and [Tauri's signing setup](https://v2.tauri.app/distribute/sign/macos/) for the Developer ID and App Store Connect credentials. On macOS, use `base64 -i /path/to/file | pbcopy` to copy an Apple key or certificate straight to the clipboard for entry into GitHub. Never commit the credential files.
+Use `base64 -i /path/to/file | pbcopy` on macOS to copy an encoded certificate or API key directly to the clipboard. Store credentials outside the checkout. [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/)
 
-Generate the separate updater key once on a trusted machine, outside the checkout:
+Generate the updater key once on a trusted machine.
 
 ```sh
 npm ci
 npm exec -- tauri signer generate -w ~/.tauri/fikr-vox.key
 ```
 
-Choose a password. Back up the private key and password in a secure location you control. Keep using the same key for future releases; installed copies trust the public key they shipped with.
+Store the private key and password securely. Installed copies use the matching public key to verify future updates.
 
-## Publish and verify
+## Publish a release
 
-1. Set `version` in `src-tauri/tauri.conf.json` to the next stable version. Merge the complete build inputs to `main`, including the lockfiles, desktop preparation scripts, and bundled resources. `npm run build:desktop` can check the build without signing credentials.
-2. Tag that commit and push the tag. For example, if the app version is `0.1.0`:
+1. Set `version` in `src-tauri/tauri.conf.json`. Run `npm run build:desktop` and land the release inputs on `main`.
+2. Allow the new tag in the `desktop-release` environment, then create and push it. For version `0.1.0`, replace `<commit-on-main>` with the release commit.
 
    ```sh
    git tag -a v0.1.0 <commit-on-main> -m "Fikr Vox 0.1.0"
    git push origin v0.1.0
    ```
 
-3. Check the workflow and [release page](https://github.com/bigmints/fikr-vox/releases/latest). If an interrupted upload leaves a draft, remove the incomplete draft before rerunning. A published release should be corrected with a higher version.
-4. On a separate Apple silicon Mac, download `Fikr-Vox-macOS-arm64.dmg`, drag Fikr Vox into Applications, and open it. Test microphone access and the bundled local tools.
-5. After the next stable release, open the previous version. Confirm it downloads the update on launch or from **Settings → About → Check for updates**. Make a project edit, choose **Restart to update**, then verify the new version in About and confirm the edit survived.
+3. Check the workflow and confirm the [release](https://github.com/bigmints/fikr-vox/releases/latest) contains the disk image, app archive, signature, and `latest.json`. If an interrupted upload leaves an incomplete draft, remove the draft before retrying. Publish corrections to an existing release under a higher version.
 
-The first official installer is a manual download for people using older local builds. Official builds check shortly after launch and every six hours while open. They download and verify updates in the background and apply them when the user chooses to restart.
+## Verify the installer and updater
+
+1. On a separate Apple silicon Mac, open `Fikr-Vox-macOS-arm64.dmg`, drag **Fikr Vox** into Applications, and launch it. Check microphone access and the bundled local tools.
+2. For subsequent releases, open the previous signed build and check **Settings → About → Check for updates**. After the download finishes, make a project edit and choose **Restart update**. Verify the version in About and confirm the edit persisted.
+
+People using earlier local builds install the first official release manually. Signed builds check for updates shortly after launch and every six hours while open.

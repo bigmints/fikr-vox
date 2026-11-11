@@ -17,7 +17,8 @@ local-tts/.venv/
 .venv*/
 Linly-Talker/
 
-# Deployment snapshots and generated test media
+# Local deployment data and snapshots
+deploy/voicestudio/models/
 deploy/voicestudio/live/
 deploy/voicestudio/results/
 *.orig
@@ -33,3 +34,19 @@ secrets.json
 # Compiled on-device Apple language helper
 local-tts/apple-language
 local-tts/apple-language-aarch64-apple-darwin
+
+# Local exports and review captures
+/outputs/
+/podcast-angles/
+/*.png
+/*.jpg
+
+# Generated About panel resources
+/public/app-info.json
+/public/third-party-notices.json
+
+# Local signing keys and certificates
+*.key
+*.p8
+*.p12
+*.pem

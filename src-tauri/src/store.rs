@@ -18,6 +18,18 @@ pub fn text(v: &Value, key: &str) -> String {
 pub fn initial() -> Value {
     json!({"version":1,"projects":[],"profiles":[],"assets":[],"jobs":[],"settings":{"workerUrl":"","model":"","workerStatus":"disconnected"}})
 }
+fn normalize_worker_provider(record: &mut Value, key: &str) {
+    let Some(value) = record.get(key).and_then(Value::as_str) else {
+        return;
+    };
+    // The first studio schema reserved unnamed provider IDs for remote workers.
+    if !value.is_empty()
+        && !matches!(value, "local" | "openrouter" | "voicestudio" | "worker")
+        && !value.starts_with("api:")
+    {
+        record[key] = json!("worker");
+    }
+}
 pub fn write_atomic(path: &Path, value: &Value) -> Result<()> {
     use std::io::Write;
     let temp = path.with_extension("tmp");
@@ -49,6 +61,19 @@ impl Store {
         } else {
             initial()
         };
+        normalize_worker_provider(&mut value["settings"], "voiceProvider");
+        if let Some(profiles) = value["profiles"].as_array_mut() {
+            for profile in profiles {
+                normalize_worker_provider(profile, "voiceProvider");
+            }
+        }
+        if let Some(jobs) = value["jobs"].as_array_mut() {
+            for job in jobs {
+                if matches!(job["kind"].as_str(), Some("voice" | "avatar")) {
+                    normalize_worker_provider(job, "provider");
+                }
+            }
+        }
         value["settings"]["workerStatus"] = json!("disconnected");
         Ok(Self {
             dir,

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareVideo} from '../lib/video.mjs';
 import {linkedVideo} from '../public/timeline-model.js';
-test('Worker portrait-proportion renders stay linked when a cloud aspect setting is present',()=>{
+test('Remote worker portrait-proportion renders stay linked when a cloud aspect setting is present',()=>{
  const clip={sec:{id:'opening',sceneImageId:'photo',scenePrompt:'Fixed camera',sceneAspectRatio:'9:16'},take:{id:'voice'}};
  const job={sectionId:'opening',sourceJobId:'voice',provider:'worker',engine:'infinitetalk',preset:'lightx2v-4',sceneImageId:'photo',scenePrompt:'Fixed camera',status:'completed',outputId:'video'};
  assert.equal(linkedVideo(clip,[job]),job);

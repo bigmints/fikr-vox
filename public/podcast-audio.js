@@ -29,9 +29,9 @@ const voice=presetVoiceFor(project,section)||(managed?managed.voice:provider==='
   if(voiceMode==='preset'&&!voice)throw Error(`Choose a preset voice for ${profile.name}.`);
   if(voiceMode==='clone'&&!profile.voiceAssetId)throw Error(`Add a voice recording to ${profile.name}.`);
   if(provider==='local'&&voiceMode==='clone'&&!profile.voiceTranscript?.trim())throw Error(`Add the exact reference transcript to ${profile.name}.`);
-  if(provider==='worker'&&s.workerStatus!=='connected')throw Error('Connect Worker before generating the episode.');
+  if(provider==='worker'&&s.workerStatus!=='connected')throw Error('Connect a remote worker before generating the episode.');
   if(provider==='openrouter'&&!s.openrouterConfigured)throw Error('Add an OpenRouter key in Settings.');
-  if(provider==='voicestudio'&&!s.voicestudioConfigured)throw Error('Add a VoiceStudio key in Settings.');
+  if(provider==='voicestudio'&&!s.voicestudioConfigured)throw Error('Add your VoiceStudio server address and key in Settings.');
   return {projectId:project.id,sectionId:section.id,kind:'voice',provider,engine,voiceMode,voice,...(provider==='local'?{instruct:['qwen3-custom','omnivoice'].includes(engine)?(profile.localVoiceInstruction||''):'',speech:localSpeechFor(profile,s)}:{})};
 }
 

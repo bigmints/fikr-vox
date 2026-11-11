@@ -7,7 +7,7 @@ import {createDubbing} from './lib/dubbing.mjs';
 import {defaultDubbing,normalizeDubbing} from './public/dubbing-model.js';
 import {ensurePodcastTracks} from './public/podcast-tracks.js';
 import {voiceIdentity,voiceTakeBelongsToClip} from './public/podcast-audio.js';
-import {createVoiceStudio,voiceStudioUrl,LEGACY_VOICESTUDIO_URL} from './lib/voicestudio.mjs';
+import {createVoiceStudio,voiceStudioUrl} from './lib/voicestudio.mjs';
 import {workerPreset} from './public/worker-presets.js';
 import {validateProjectType,normalizePodcast,validateSpeakers,profileIdFor,presetVoiceFor,speakerFor,matchesSpeaker,projectSection} from './public/project-model.js';
 import {isLocalPreset,localSpeechFor} from './public/local-voices.js';
@@ -39,8 +39,7 @@ export async function createApp({dataDir=join(root,'data'),fetcher=fetch}={}) {
   const higgsfield=createHiggsfieldVideo(store,dataDir,secrets,fetcher);
   const providers=createProviders(store,dataDir,secrets,fetcher);
   const openrouter=createOpenRouter(store,dataDir,()=>secrets.openrouterKey||process.env.OPENROUTER_API_KEY,fetcher);
-  if(secrets.voicestudioKey&&store.read().settings.voicestudioUrl===undefined)await store.update(s=>s.settings.voicestudioUrl=LEGACY_VOICESTUDIO_URL);
-  const voicestudio=createVoiceStudio(store,dataDir,()=>secrets.voicestudioKey,fetcher);
+   const voicestudio=createVoiceStudio(store,dataDir,()=>secrets.voicestudioKey,fetcher);
 const localTts=createLocalTts(store,dataDir);
 const localLanguage=createLocalLanguage(store,dataDir,localTts);
   await store.update(s=>{for(const j of s.jobs)if(['local','voicestudio'].includes(j.provider)&&['running','queued','submitting'].includes(j.status))Object.assign(j,{status:'failed',error:'Local speech was interrupted. Generate a new take.'});});
@@ -61,7 +60,7 @@ const video=createVideo(store,dataDir,()=>secrets.openrouterKey||process.env.OPE
       res.setHeader('X-Content-Type-Options','nosniff');
       res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'");
       if(path==='/api/state'&&req.method==='GET'){
-        const s=store.read();s.settings.providers=providers.publicProviders();s.settings.voicestudioConfigured=!!secrets.voicestudioKey;s.settings.openrouterConfigured=!!(secrets.openrouterKey||process.env.OPENROUTER_API_KEY);s.settings.workerTokenConfigured=!!await token();return send(s);
+        const s=store.read();s.settings.providers=providers.publicProviders();s.settings.voicestudioConfigured=!!(secrets.voicestudioKey&&s.settings.voicestudioUrl);s.settings.openrouterConfigured=!!(secrets.openrouterKey||process.env.OPENROUTER_API_KEY);s.settings.workerTokenConfigured=!!await token();return send(s);
       }
       if(path==='/api/providers/presets'&&req.method==='GET')return send(providerPresets);
       if(path==='/api/providers/discover'&&req.method==='POST')return send(await providers.discover(await jsonBody(req)));
@@ -142,7 +141,7 @@ if(b.openrouterKey!==undefined)secrets.openrouterKey=str(b.openrouterKey,1000);
         await store.update(s=>{if(b.voicestudioUrl!==undefined)s.settings.voicestudioUrl=b.voicestudioUrl;if(b.localSpeech!==undefined)s.settings.localSpeech=b.localSpeech;for(const k of ['videoProvider','chatProvider','transcriptionProvider','translationProvider','localTranscriptionModel','model','speechModel','listeningModel','videoModel','voiceMode','voice','voiceProvider','avatarProvider','localEngine','localVoice','workerAvatarPreset'])if(b[k]!==undefined)s.settings[k]=str(b[k],200);if(b.workerUrl!==undefined&&(b.workerUrl!==s.settings.workerUrl||b.workerToken!==undefined))Object.assign(s.settings,{workerUrl:str(b.workerUrl,1000),workerStatus:'disconnected',capabilities:null});});return send({ok:true});
       }
       if(path==='/api/worker/check'&&req.method==='POST'){
-        const s=store.read();if(!s.settings.workerUrl)throw fail('Add the Worker worker URL first.');
+        const s=store.read();if(!s.settings.workerUrl)throw fail('Add the remote worker URL first.');
         try{const cap=await (await workerClient(s.settings.workerUrl,await token(),fetcher)('/v1/capabilities')).json();if(cap.apiVersion!==1||!Array.isArray(cap.engines))throw fail('This endpoint is not a MyTwin v1 worker.');await store.update(s=>Object.assign(s.settings,{workerStatus:'connected',capabilities:cap}));return send(cap);}catch(e){await store.update(s=>s.settings.workerStatus='disconnected');throw fail(e.message,502);}
       }
       if(path==='/api/write'&&req.method==='POST'){
@@ -177,7 +176,7 @@ if(b.openrouterKey!==undefined)secrets.openrouterKey=str(b.openrouterKey,1000);
           if(p.mode==='audio'){if(!s.assets.some(a=>a.id===p.audioId&&a.type.startsWith('audio/')))throw fail('Upload narration audio first.');inputs.audio=p.audioId;}
           else{const source=s.jobs.find(j=>j.id===b.sourceJobId&&j.projectId===p.id&&j.sectionId===section.id&&j.kind==='voice'&&j.status==='completed'&&j.approved&&j.text===section.text&&matchesSpeaker(p,section,j));if(!source)throw fail('Approve a current voice take before generating the avatar.');inputs.audio=source.outputId;sourceJobId=source.id;}}
         if(!str(b.engine,200))throw fail('Choose an engine.');if(b.provider==='openrouter'&&b.kind==='avatar')validateAvatar(s,inputs,b.engine);
-        const job={preset:b.kind==='avatar'&&b.engine==='infinitetalk'&&b.provider!=='openrouter'?workerPreset(b.preset):undefined,speech:b.provider==='local'?speechOptions(b.speech===undefined?localSpeechFor(profile,s.settings):b.speech):undefined,id:id(),projectId:p.id,sectionId:section.id,projectTitle:p.title,sectionTitle:section.title,profileName:profile.name,profileId:profile.id,speakerId:speakerFor(p,section)?.id||'',speakerName:speakerFor(p,section)?.name||'',kind:b.kind,provider:isApiProvider(b.provider)?b.provider:b.provider==='voicestudio'?'voicestudio':b.provider==='local'?'local':b.provider==='openrouter'?'openrouter':'worker',referenceText:profile.voiceTranscript||'',instruct:b.provider==='local'&&['qwen3-custom','omnivoice'].includes(b.engine)?b.instruct||'':'',voiceMode:b.provider==='local'?(isLocalPreset(b.engine)?'preset':'clone'):str(b.voiceMode),voice:str(presetVoiceFor(p,section)||b.voice),engine:str(b.engine,200),text:section.text,language:p.language,inputs,sourceJobId,video:b.kind==='avatar'&&b.provider==='openrouter'?avatarOptions(b.video):undefined,audioShare:b.audioShare===true,sceneImageId:avatarAssetId||undefined,scenePrompt:avatarAssetId?str(b.avatarAssetId?b.scenePrompt:avatarSection?.scenePrompt,10000):undefined,avatarMotionPrompt:avatarMotionPrompt||undefined,status:'prepared',stage:b.provider==='local'?'Ready to generate on this Mac':'Ready to submit when Worker is available',createdAt:now(),updatedAt:now(),approved:false};
+        const job={preset:b.kind==='avatar'&&b.engine==='infinitetalk'&&b.provider!=='openrouter'?workerPreset(b.preset):undefined,speech:b.provider==='local'?speechOptions(b.speech===undefined?localSpeechFor(profile,s.settings):b.speech):undefined,id:id(),projectId:p.id,sectionId:section.id,projectTitle:p.title,sectionTitle:section.title,profileName:profile.name,profileId:profile.id,speakerId:speakerFor(p,section)?.id||'',speakerName:speakerFor(p,section)?.name||'',kind:b.kind,provider:isApiProvider(b.provider)?b.provider:b.provider==='voicestudio'?'voicestudio':b.provider==='local'?'local':b.provider==='openrouter'?'openrouter':'worker',referenceText:profile.voiceTranscript||'',instruct:b.provider==='local'&&['qwen3-custom','omnivoice'].includes(b.engine)?b.instruct||'':'',voiceMode:b.provider==='local'?(isLocalPreset(b.engine)?'preset':'clone'):str(b.voiceMode),voice:str(presetVoiceFor(p,section)||b.voice),engine:str(b.engine,200),text:section.text,language:p.language,inputs,sourceJobId,video:b.kind==='avatar'&&b.provider==='openrouter'?avatarOptions(b.video):undefined,audioShare:b.audioShare===true,sceneImageId:avatarAssetId||undefined,scenePrompt:avatarAssetId?str(b.avatarAssetId?b.scenePrompt:avatarSection?.scenePrompt,10000):undefined,avatarMotionPrompt:avatarMotionPrompt||undefined,status:'prepared',stage:b.provider==='local'?'Ready to generate on this Mac':'Ready to submit when the worker is available',createdAt:now(),updatedAt:now(),approved:false};
         const saved=await store.update(s=>{if(b.reuseCurrent&&job.kind==='voice'){const prior=s.jobs.find(j=>j.kind==='voice'&&['prepared','waiting','submitting','queued','running','completed'].includes(j.status)&&(j.status!=='completed'||j.outputId)&&voiceIdentity(j)===voiceIdentity(job));if(prior)return prior;}s.jobs.unshift(job);return job;});return send(saved,201);
       }
       const jm=path.match(/^\/api\/jobs\/([\w-]+)\/(submit|refresh|cancel|approve)$/);

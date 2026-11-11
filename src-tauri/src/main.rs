@@ -197,7 +197,7 @@ async fn studio_api(
     match (method.as_str(), path.as_str()) {
         ("GET", "/state") => {
             let mut s = studio.store.read();
-s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap(),"voicestudioKey").is_empty());
+s["settings"]["voicestudioConfigured"]=json!(!text(&studio.secrets.lock().unwrap(),"voicestudioKey").is_empty()&&!text(&s["settings"],"voicestudioUrl").is_empty());
             s["settings"]["providers"]=studio.providers.public();
 let secrets = studio.secrets.lock().unwrap();
             s["settings"]["openrouterConfigured"] =
@@ -693,9 +693,7 @@ let local_resources=if cfg!(debug_assertions) {PathBuf::from(env!("CARGO_MANIFES
             store.update(|s|{for j in s["jobs"].as_array_mut().unwrap(){if (j["provider"]=="local" || j["provider"]=="voicestudio") && ["running","queued","submitting"].contains(&text(j,"status").as_str()){j["status"]=json!("failed");j["error"]=json!("Local speech was interrupted. Generate a new take.");}}Ok(())}).map_err(std::io::Error::other)?;
             let video_poller=openrouter.clone();
             tauri::async_runtime::spawn(async move {loop {tokio::time::sleep(Duration::from_secs(30)).await;let s=video_poller.store.read();for j in s["jobs"].as_array().unwrap(){if text(j,"parentVideoId").is_empty()&&!text(j,"videoRemoteId").is_empty()&&["queued","running","cancel_requested"].contains(&text(j,"status").as_str()){let client=video_poller.clone();let id=text(j,"id");tauri::async_runtime::spawn(async move {client.video_run(id,false).await;});}}}});
-            if !text(&secrets.lock().unwrap(),"voicestudioKey").is_empty() && store.read()["settings"].get("voicestudioUrl").is_none() {
-                store.update(|s|{s["settings"]["voicestudioUrl"]=json!(voicestudio::LEGACY_URL);Ok(())}).map_err(std::io::Error::other)?;
-            }
+
             let voicestudio=voicestudio::VoiceStudio{store:store.clone(),secrets:secrets.clone()};
 app.manage(Studio {
 providers,

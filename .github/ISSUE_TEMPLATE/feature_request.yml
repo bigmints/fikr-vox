@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest an improvement to Fikr Vox
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What are you trying to do?
+      description: Describe the workflow and where you get stuck today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What change would help?
+    validations:
+      required: true

@@ -15,5 +15,15 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4"
+  },
+  "description": "An open-source Mac studio for voiceovers, podcasts, and video dubbing.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bigmints/fikr-vox.git"
+  },
+  "homepage": "https://fikr.one/vox/",
+  "bugs": {
+    "url": "https://github.com/bigmints/fikr-vox/issues"
   }
 }

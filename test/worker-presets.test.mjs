@@ -19,7 +19,7 @@ test('removed InfiniteTalk jobs never contact a worker and completed outputs sta
  let requests=0;const worker=createOrchestrator(store,dir,async()=>'',async()=>{requests++;throw new Error('Removed model must not contact a worker');});
  await worker.run('fast');await worker.run('legacy');await worker.run('finished');
  assert.equal(requests,0);
- for(const id of ['fast','legacy']){const j=store.read().jobs.find(j=>j.id===id);assert.equal(j.status,'failed');assert.match(j.error,/removed from Worker/);}
+ for(const id of ['fast','legacy']){const j=store.read().jobs.find(j=>j.id===id);assert.equal(j.status,'failed');assert.match(j.error,/retired/);}
  assert.equal(store.read().jobs.find(j=>j.id==='finished').outputId,'saved-video');
  assert.equal(store.read().jobs.find(j=>j.id==='finished').status,'completed');
 });

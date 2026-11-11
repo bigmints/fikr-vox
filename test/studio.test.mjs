@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp,rm,readFile } from 'node:fs/promises';
+import { mkdtemp,rm,readFile,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server.mjs';
@@ -65,11 +65,12 @@ test('VoiceStudio URL persists, checks the chosen server, and rejects invalid ed
   const state=(await f.call('/state')).data;
   assert.equal(state.settings.voicestudioUrl,'');assert.equal(state.settings.voicestudioConfigured,false);
 });
-test('legacy VoiceStudio credentials retain their old endpoint on upgrade', async t => {
+test('VoiceStudio credentials require an explicitly configured server', async t => {
   const f=await fixture(t);await f.call('/settings','PUT',{voicestudioKey:'legacy-test-key'});
+  assert.equal((await f.call('/state')).data.settings.voicestudioConfigured,false);
   const reopened=await createApp({dataDir:f.dir});
   t.after(()=>reopened.server.emit('close'));
-  assert.equal(reopened.store.read().settings.voicestudioUrl,'https://voicestudio.example.invalid:9444');
+  assert.equal(reopened.store.read().settings.voicestudioUrl,undefined);
 });
 
 test('About metadata and offline license notices are bundled and served as JSON',async t=>{
@@ -107,4 +108,19 @@ test('About metadata and offline license notices are available through the app A
  const info=await f.call('/about/info');assert.equal(info.status,200);assert.equal(typeof info.data.name,'string');assert.ok(info.data.models.some(m=>m.repo==='facebook/m2m100_418M'));
  const notices=await f.call('/about/notices');assert.equal(notices.status,200);assert.ok(notices.data.components.length>0);for(const component of notices.data.components)for(const notice of component.notices)assert.equal(typeof notices.data.texts[notice.textId],'string');
  assert.equal((await f.call('/about/secrets')).status,404);
+});
+
+test('older worker profiles and takes keep their provider on reopen', async t => {
+  const f = await fixture(t);
+  const saved = f.store.read();
+  saved.settings.voiceProvider = 'old-worker-provider';
+  saved.profiles = [{voiceProvider:'old-worker-provider'}, {voiceProvider:'api:custom'}];
+  saved.jobs = [{kind:'voice',provider:'old-worker-provider',status:'completed',outputId:'original'}];
+  await writeFile(join(f.dir,'studio.json'), JSON.stringify(saved));
+  const reopened = await createApp({dataDir:f.dir});
+  t.after(() => reopened.server.emit('close'));
+  const state = reopened.store.read();
+  assert.equal(state.settings.voiceProvider,'worker');
+  assert.deepEqual(state.profiles.map(profile => profile.voiceProvider), ['worker','api:custom']);
+  assert.deepEqual(state.jobs[0], {kind:'voice',provider:'worker',status:'completed',outputId:'original'});
 });
